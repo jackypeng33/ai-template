@@ -1,0 +1,105 @@
+---
+title: PayPal 自动续费订阅
+description: 月付、年付、分期积分、取消续费与异常恢复。
+---
+
+## 启用订阅
+
+先完成 [PayPal 基础配置](./paypal)，检查并执行全部数据库迁移（`pnpm db:migrate`），包括 `0010_paypal_subscriptions.sql` 和 `0011_paypal_subscription_reconciliation.sql`。为对应沙箱或正式应用配置四个 Plan ID：
+
+```dotenv
+PAYPAL_SUBSCRIPTIONS_ENABLED=true
+PAYPAL_PLAN_STARTER_MONTHLY=P-...
+PAYPAL_PLAN_STARTER_YEARLY=P-...
+PAYPAL_PLAN_PRO_MONTHLY=P-...
+PAYPAL_PLAN_PRO_YEARLY=P-...
+```
+
+启用后，**新订阅**统一通过 PayPal 开通，Creem 接口会拒绝新订阅请求；已有 Creem 订阅和一次性购买仍按原流程工作。关闭订阅开关只停止新购，不能取消已有自动扣款。要继续处理已有 PayPal 订阅，需保留 `PAYPAL_ENABLED`、应用凭据和通知配置。
+
+## 在 PayPal 创建套餐
+
+先通过 Catalog Products API 创建服务类 Product，再通过 Billing Plans API 创建四个套餐。不能复用 Creem 或另一 PayPal 环境的 ID。服务端在创建订阅前核验套餐：
+
+| 本地 key | 正常扣款周期 | 每期固定美元费用 | 每付款周期积分 |
+| --- | --- | --- | --- |
+| starter_monthly | MONTH / 1 | 29.00 | 1,000 |
+| starter_yearly | YEAR / 1 | 290.00 | 全年 12,000，按月发放 |
+| pro_monthly | MONTH / 1 | 99.00 | 10,000 |
+| pro_yearly | YEAR / 1 | 990.00 | 全年 120,000，按月发放 |
+
+套餐必须为 ACTIVE，只有一个 REGULAR 周期，`sequence: 1`、`total_cycles: 0`（无限续费）；不支持试用、数量阶梯价格、开通费、税费和运费，且要求 `auto_bill_outstanding: false`。这样不会把合并欠费或开通费误认成正常一期付款。Starter 月付的创建请求示例（`POST /v1/billing/plans`）：
+
+```json
+{
+  "product_id": "YOUR_SERVICE_PRODUCT_ID",
+  "name": "Starter monthly",
+  "status": "ACTIVE",
+  "billing_cycles": [{
+    "frequency": { "interval_unit": "MONTH", "interval_count": 1 },
+    "tenure_type": "REGULAR", "sequence": 1, "total_cycles": 0,
+    "pricing_scheme": { "fixed_price": { "value": "29.00", "currency_code": "USD" } }
+  }],
+  "payment_preferences": {
+    "auto_bill_outstanding": false,
+    "setup_fee": { "value": "0.00", "currency_code": "USD" },
+    "payment_failure_threshold": 1
+  },
+  "quantity_supported": false
+}
+```
+
+按上表创建其他三个套餐。创建订阅时会保存价格和积分规则快照。不要在外部随意修改已有订阅的 Plan、数量或价格；不匹配时需要核查，系统不会自动更改积分规则。本期不支持期中升降级、试用或从 Creem 自动迁移。
+
+## Webhook 与入账
+
+在同一个验签监听地址 `/api/payments/paypal/webhook` 增加：
+
+- `BILLING.SUBSCRIPTION.CREATED`、`BILLING.SUBSCRIPTION.ACTIVATED`、`BILLING.SUBSCRIPTION.UPDATED`
+- `BILLING.SUBSCRIPTION.CANCELLED`、`BILLING.SUBSCRIPTION.SUSPENDED`、`BILLING.SUBSCRIPTION.EXPIRED`
+- `BILLING.SUBSCRIPTION.PAYMENT.FAILED`
+- `PAYMENT.SALE.COMPLETED`、`PAYMENT.SALE.REFUNDED`、`PAYMENT.SALE.REVERSED`
+
+激活事件本身不会发积分或赋予付费套餐。收到付款完成通知后，服务端通过已鉴权的 PayPal API 查询订阅和交易历史，核对交易 ID、金额、币种和业务引用，使用 `paypal:sale:<transactionId>` 幂等入账。用户行锁与同一事务保证支付记录、余额、流水、套餐权益和分期记录一起提交。返回页同步与重复通知不会重复充值。
+
+月付每次收款发当月积分。年付按真实付款时间建立 12 条 `subscription_credit_grant`，已到期部分立即发放，未来部分通过定时任务发放。每笔付款保留独立分期记录，迟到通知不会覆盖另一个已付年度，也不会把权益截止时间改回过去。`payment.creditsGranted` 会累计实际已发放积分。
+
+## 取消与已付权益
+
+用户在设置页的账单区域查看 PayPal 订阅，可继续授权、刷新状态及确认取消。取消会调用 PayPal 的真实取消接口。仅从带取消参数的页面返回，不会取消已经生效的自动续费。
+
+`subscription.status` 表示平台状态，`currentPeriodEnd` 保存已付权益截止时间，`nextBillingAt` 保存平台下次预计扣款时间。取消或暂停后，已购买期间的权益与分期积分继续保留。到期后资料接口不再显示付费权益，定时任务更新 `user.planKey`；已经发出的积分不会到期清零。
+
+同一用户只允许一个未结束或权益未到期的订阅。原有 Creem 订阅需要先在原渠道停止并核查平台/本地记录，本实现不自动迁移订阅，也不修复 Creem 原有取消同步缺口。不确定的待授权订阅会保留，避免重复建立自动扣款。创建响应丢失时五小时内沿用同一个请求标识重试，更早且未确认的请求需要商户核查。
+
+退款和撤销会进入人工核查，并暂停该订阅未发出的分期积分；对账发现已退款交易时也会暂停。已经发放的积分不会自动扣回，余额修复必须同时记流水。本期没有后台审核修复界面。
+
+PayPal 订阅仍未结束、权益未到期或待核查时，后台的套餐标签修改和用户删除会被阻止。需先通过支付平台取消并核对记录；只改 `user.planKey` 不能停止自动扣款。
+
+## 必须配置的定时任务
+
+至少每小时调用已有 `/api/cron/subscription-grants`，使用 `CRON_SECRET` 或 Basic 凭据鉴权。接口会处理 Creem 旧分期、每次对账最多 5 个 PayPal 订阅、发放 PayPal 到期积分，并刷新过期套餐标签。单个订阅对账失败会记录并轮转重试，响应含 `paypalReconciliation` 和 `paypalGrants`。
+
+交易对账每次最多推进 30 天，并回看前一天；长期停机后不会只看最后一笔付款，也不会跳过待确认交易。因此遗漏周期可以在后续调用中补齐。订阅较多时需增加调用频率。多页或异常交易会要求核查，避免悄悄漏账。失败通知也可从 PayPal 后台重新发送。
+
+运营只读查询：
+
+```sql
+SELECT id, user_id, provider_sub_id, status, current_period_end,
+       next_billing_at, transactions_checked_through, billing_review
+FROM subscription WHERE provider = 'paypal' ORDER BY created_at DESC;
+
+SELECT id, event_type, provider_subscription_id, resource_id, status, error
+FROM payment_event WHERE provider = 'paypal' AND status IN ('failed', 'requires_review');
+
+SELECT subscription_id, payment_id, amount, due_at, granted_at
+FROM subscription_credit_grant WHERE granted_at IS NULL ORDER BY due_at;
+```
+
+## 验证
+
+执行 `pnpm lint`、`pnpm test --maxWorkers=2` 和 `pnpm build`。数据库事务测试需显式设置独立的 `PAYPAL_TEST_DATABASE_URL`，再运行 `pnpm exec vitest run tests/lib/paypal-settlement.integration.test.ts --maxWorkers=1`；测试只创建和删除该测试库中的随机 schema。
+
+沙箱仍需使用你自己的商户应用和买家验证：首次月付/年付、真实续费、付款失败与恢复、取消、重复/乱序通知、年付定时发放和漏通知恢复。普通构建和单元测试不会创建 PayPal 收费套餐、执行外部数据库迁移或产生真实扣款。
+
+官方参考：[Subscriptions API](https://developer.paypal.com/api/subscriptions/v1/)、[订阅事件](https://developer.paypal.com/subscriptions/webhooks)。

@@ -1,0 +1,52 @@
+---
+title: PayPal 一次性积分包
+description: 配置与验证 PayPal 一次性收款。
+---
+
+PayPal 是可选的第二种积分包付款方式，商品来自 `constants/billing.ts`，默认 5 美元购买 200 积分。自动续费需单独启用，参见 [PayPal 订阅](./paypal-subscriptions)。已有 Creem 订阅仍可继续续费。
+
+## 配置
+
+1. 执行 `pnpm install`，检查新增的 `drizzle/0009_*.sql`，然后对目标数据库执行 `pnpm db:migrate`。部署不会自动执行迁移。
+2. 创建 PayPal Sandbox REST 应用以及独立买家测试账号。在服务端设置 `PAYPAL_ENABLED=true`、`PAYPAL_ENV=sandbox`、`PAYPAL_CLIENT_ID`、`PAYPAL_CLIENT_SECRET`、`PAYPAL_MERCHANT_ID`（收款商户 ID）和 `PAYPAL_WEBHOOK_ID`。不要使用 `NEXT_PUBLIC_` 前缀暴露这些配置。
+3. 将 `NEXT_PUBLIC_APP_URL` 设置为实际访问来源。本地接收通知需要公网 HTTPS 地址，浏览器也使用同一地址测试。
+4. 在同一个 REST 应用中注册 `https://你的域名/api/payments/paypal/webhook`，订阅 `CHECKOUT.ORDER.APPROVED`、`PAYMENT.CAPTURE.COMPLETED`、`PAYMENT.CAPTURE.REFUNDED` 和 `PAYMENT.CAPTURE.REVERSED`。
+5. 重启应用。配置完整后，定价页、Dashboard 和积分页显示 PayPal 按钮。正式环境需要 `PAYPAL_ENV=live`、配套正式应用/商户/Webhook，以及 HTTPS 应用地址。沙箱订单不能切换到正式环境处理。
+
+## 付款与积分到账
+
+`POST /api/payments/paypal/checkout` 只接受商品 key、语言和 UUID 请求标识。用户身份来自会话，价格与积分数量来自服务端配置；调用 PayPal 前先保存到 `billing_order`。同一用户重复提交同一请求标识会恢复原订单，不能借此改成另一商品。
+
+用户批准付款后返回 `/billing/return` 或 `/zh/billing/return`，页面调用已鉴权的 `POST /api/payments/paypal/capture` 确认收款。已验签的批准通知同样可以触发 Capture，因此关闭返回页不会丢失已批准订单。两条路径使用固定请求标识重试；网络超时后查询原订单，不会直接重新扣款。
+
+只有收款完成，且订单、业务引用、商户、币种、金额全部匹配时才发积分。入账事务锁定本地订单，一起提交 `payment`、用户余额、`credit_ledger` 和订单状态。支付 ID 使用 `paypal:<captureId>`。此流程不会修改订阅或套餐标签。待确认款项不发积分，返回页查询本地真实到账状态，不依赖 URL 的成功标记。
+
+## 异常恢复与人工核查
+
+通知通过 PayPal 官方回传验签接口验证。必须用真实沙箱付款完成联调：PayPal 模拟器的 mock 通知不支持这种验签方式。验签失败不会影响余额；业务处理失败返回非 2xx，由 PayPal 重试。失败事件保存在 `payment_event`，可以从 PayPal 后台重新发送。通知与前端同时入账或重复通知不会重复充值。
+
+没有保存批准链接的创建请求只允许在五小时内自动重试，避免超过 PayPal 有限的幂等保存时间后产生第二笔不确定订单。超过窗口时，根据本地订单 UUID（同时写入 PayPal 的 `custom_id` 和 `reference_id`）在 PayPal 后台核查，再决定是否重新购买。窗口内重试必须保留原请求标识。
+
+退款与支付撤销会保存为 `requires_review` 并记录日志。本期**不会自动扣回积分，也不会主动发起退款**。运营人员需核对原支付与已消耗积分，通过同时修改余额和流水的事务处理。正式收款前应建立人工核查流程：
+
+```sql
+SELECT id, event_type, provider_order_id, resource_id, status, error, created_at
+FROM payment_event
+WHERE provider = 'paypal' AND status IN ('failed', 'requires_review')
+ORDER BY created_at;
+
+SELECT id, user_id, provider_order_id, status, payment_id, created_at
+FROM billing_order
+WHERE provider = 'paypal' AND status <> 'succeeded'
+ORDER BY created_at;
+```
+
+一次性积分包采用上述查询与 PayPal 事件重发恢复，没有后台事件审核界面。订阅对账任务见独立指南。原有 Creem 记账的事务限制未在此次改动中修复。
+
+## 验证
+
+执行 `pnpm lint`、`pnpm test` 和 `pnpm build`。数据库并发/回滚测试使用独立测试库：配置 `PAYPAL_TEST_DATABASE_URL` 后执行 `pnpm exec vitest run tests/lib/paypal-settlement.integration.test.ts`。测试会创建随机 schema，在其中应用迁移并在结束时删除该 schema；不会回退使用 `DATABASE_URL`。
+
+沙箱应覆盖成功付款、关闭返回页、重复/乱序通知、Capture 超时后重试、越权访问、待确认付款、金额/币种/商户不匹配，以及数据库写入失败后重发。退款和撤销应进入人工核查队列。普通单元测试不会产生真实扣款，也不会迁移外部数据库。
+
+官方参考：[Orders API](https://developer.paypal.com/api/orders/v2)、[Webhook 验签](https://developer.paypal.com/api/rest/webhooks/rest/)。

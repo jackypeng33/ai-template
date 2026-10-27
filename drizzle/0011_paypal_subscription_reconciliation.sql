@@ -1,0 +1,1 @@
+ALTER TABLE "subscription" ADD COLUMN "transactions_checked_through" timestamp;

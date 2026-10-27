@@ -1,0 +1,52 @@
+---
+title: PayPal credit packs
+description: Configure and verify one-time PayPal payments.
+---
+
+PayPal is an optional second payment method for the existing one-time packs in `constants/billing.ts`. The default pack costs USD 5 and grants 200 credits. Recurring billing is separately enabled and documented in [PayPal subscriptions](./paypal-subscriptions). Existing Creem renewals remain supported.
+
+## Setup
+
+1. Run `pnpm install` and review the generated `drizzle/0009_*.sql` migration, then run `pnpm db:migrate` against the intended database. Deployments do not run migrations automatically.
+2. Create a PayPal sandbox REST app and a separate sandbox buyer. Set `PAYPAL_ENABLED=true`, `PAYPAL_ENV=sandbox`, `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`, `PAYPAL_MERCHANT_ID` (the receiving merchant's ID), and `PAYPAL_WEBHOOK_ID` in the server environment. These are not browser environment variables.
+3. Set `NEXT_PUBLIC_APP_URL` to the actual application origin. Local webhook delivery requires a publicly reachable HTTPS endpoint; use the same origin for browser testing.
+4. Register `https://your-domain/api/payments/paypal/webhook` on that REST app. Subscribe to `CHECKOUT.ORDER.APPROVED`, `PAYMENT.CAPTURE.COMPLETED`, `PAYMENT.CAPTURE.REFUNDED`, and `PAYMENT.CAPTURE.REVERSED`.
+5. Restart the app. PayPal buttons appear on pricing, dashboard and credits pages only when the configuration is complete. Live mode requires a matching live app, merchant and webhook, and an HTTPS app URL. Sandbox orders cannot be processed in live mode.
+
+## Payment flow
+
+`POST /api/payments/paypal/checkout` accepts only a catalog pack key, locale and UUID request ID. Identity comes from the session; prices and credits come from the server catalog. `billing_order` saves a price/credit snapshot before contacting PayPal. Repeating the same request ID for the same user resumes the same order; it cannot select a different pack.
+
+PayPal approval returns to `/billing/return` or `/zh/billing/return`. That page calls the authenticated `POST /api/payments/paypal/capture`. The verified approval webhook also initiates capture, so closing the return page does not abandon an approved order. Both paths use a stable PayPal request ID. Capture uncertainty is resolved by fetching the remote order, not by charging a new order.
+
+Only a completed capture with matching order, custom reference, merchant, currency and exact amount grants credits. The shared settlement transaction locks the local order and writes `payment`, `user.credits`, `credit_ledger` and `billing_order` together. `payment.id` and `provider_payment_id` use `paypal:<captureId>`. No subscription or plan label changes occur. Pending funding does not grant credits. The return page polls the authenticated local order endpoint and never trusts success URL flags.
+
+## Recovery and review
+
+The listener verifies events through PayPal's verify-webhook-signature API. Use real sandbox checkouts for end-to-end verification: PayPal's mock webhook simulator does not support this postback verification method. Invalid signatures cannot change balances. Failed processing returns non-2xx so PayPal can retry. Failed `payment_event` rows remain replayable through PayPal's event resend feature; accounting remains idempotent even if capture and webhook run concurrently.
+
+Creation retries are capped at five hours if no approval URL was saved, to avoid re-creating an uncertain order after PayPal's finite idempotency retention. Review such orders using the local order UUID (the remote purchase unit's `custom_id` and `reference_id`) and PayPal dashboard before starting a fresh purchase. Use the original request ID for retries within the window.
+
+Refund and reversal events are retained as `requires_review` and logged. This release does **not** automatically reclaim credits or initiate refunds. An operator must reconcile the payment and any already-consumed credits, using a balance-and-ledger transaction. Review these before enabling live payments:
+
+```sql
+SELECT id, event_type, provider_order_id, resource_id, status, error, created_at
+FROM payment_event
+WHERE provider = 'paypal' AND status IN ('failed', 'requires_review')
+ORDER BY created_at;
+
+SELECT id, user_id, provider_order_id, status, payment_id, created_at
+FROM billing_order
+WHERE provider = 'paypal' AND status <> 'succeeded'
+ORDER BY created_at;
+```
+
+One-time pack recovery uses PayPal event replay and the queries above; there is no admin event-review screen. Subscription reconciliation is described in the separate guide. Existing Creem accounting limitations remain separate from this implementation.
+
+## Verification
+
+Run `pnpm lint`, `pnpm test` and `pnpm build`. For isolated PostgreSQL transaction/concurrency tests, set `PAYPAL_TEST_DATABASE_URL` to a disposable **test** database and run `pnpm exec vitest run tests/lib/paypal-settlement.integration.test.ts`. The test creates a random schema, applies migrations there, and drops only that schema afterwards. It never uses `DATABASE_URL` as a fallback.
+
+In sandbox, verify successful payment, abandoned return, duplicate/reordered webhooks, capture timeout/retry, another user's order rejection, pending funding, amount/currency/merchant mismatch and a failed database write followed by replay. Test refunds/reversals reach the review queue. No live charge or external database migration is performed by the automated unit suite.
+
+Official references: [Orders API](https://developer.paypal.com/api/orders/v2), [webhook verification](https://developer.paypal.com/api/rest/webhooks/rest/).

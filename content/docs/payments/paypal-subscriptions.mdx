@@ -1,0 +1,105 @@
+---
+title: PayPal subscriptions
+description: Monthly and annual automatic renewal, credit installments, cancellation and recovery.
+---
+
+## Enable recurring checkout
+
+First configure [PayPal credentials and webhooks](./paypal) and apply all migrations (`pnpm db:migrate`), including `0010_paypal_subscriptions.sql` and `0011_paypal_subscription_reconciliation.sql`. Add the four plan IDs from your matching sandbox/live app:
+
+```dotenv
+PAYPAL_SUBSCRIPTIONS_ENABLED=true
+PAYPAL_PLAN_STARTER_MONTHLY=P-...
+PAYPAL_PLAN_STARTER_YEARLY=P-...
+PAYPAL_PLAN_PRO_MONTHLY=P-...
+PAYPAL_PLAN_PRO_YEARLY=P-...
+```
+
+The flag selects PayPal for **new** subscription checkouts. Creem rejects new subscription checkouts in that mode, while its existing subscribers and one-time purchases keep working. Disabling this flag hides new PayPal subscription purchases but does not stop existing renewals; retain `PAYPAL_ENABLED`, app credentials and webhooks to service those subscriptions.
+
+## Plans to create in PayPal
+
+Create a service product using PayPal's Catalog Products API, then four billing plans. Do not reuse IDs from Creem or from another PayPal environment. The server checks each plan before creating a subscription:
+
+| Local key | Regular frequency | Fixed USD charge | Credits per paid cycle |
+| --- | --- | --- | --- |
+| starter_monthly | MONTH / 1 | 29.00 | 1,000 |
+| starter_yearly | YEAR / 1 | 290.00 | 12,000, granted monthly |
+| pro_monthly | MONTH / 1 | 99.00 | 10,000 |
+| pro_yearly | YEAR / 1 | 990.00 | 120,000, granted monthly |
+
+Plans must be ACTIVE with exactly one REGULAR cycle (`sequence: 1`, `total_cycles: 0`, unlimited renewals), no trial, no quantity pricing, no setup fee, no tax or shipping, and `auto_bill_outstanding: false`. This prevents merged arrears or setup fees from being mistaken for a normal paid cycle. For example, create Starter monthly with `POST /v1/billing/plans`:
+
+```json
+{
+  "product_id": "YOUR_SERVICE_PRODUCT_ID",
+  "name": "Starter monthly",
+  "status": "ACTIVE",
+  "billing_cycles": [{
+    "frequency": { "interval_unit": "MONTH", "interval_count": 1 },
+    "tenure_type": "REGULAR", "sequence": 1, "total_cycles": 0,
+    "pricing_scheme": { "fixed_price": { "value": "29.00", "currency_code": "USD" } }
+  }],
+  "payment_preferences": {
+    "auto_bill_outstanding": false,
+    "setup_fee": { "value": "0.00", "currency_code": "USD" },
+    "payment_failure_threshold": 1
+  },
+  "quantity_supported": false
+}
+```
+
+Use the remaining rows to create the other three plans. Pricing and credit snapshots are saved on subscription creation. Do not externally change plan/quantity or pricing on an existing subscription; unexpected changes require support review rather than silently changing credits. In-period upgrades/downgrades, trials and automatic migration from Creem are not implemented.
+
+## Webhooks
+
+Subscribe the same verified listener `/api/payments/paypal/webhook` to:
+
+- `BILLING.SUBSCRIPTION.CREATED`, `BILLING.SUBSCRIPTION.ACTIVATED`, `BILLING.SUBSCRIPTION.UPDATED`
+- `BILLING.SUBSCRIPTION.CANCELLED`, `BILLING.SUBSCRIPTION.SUSPENDED`, `BILLING.SUBSCRIPTION.EXPIRED`
+- `BILLING.SUBSCRIPTION.PAYMENT.FAILED`
+- `PAYMENT.SALE.COMPLETED`, `PAYMENT.SALE.REFUNDED`, `PAYMENT.SALE.REVERSED`
+
+Activation alone grants neither credits nor a paid plan. For a completed sale, the server fetches the subscription and its transaction history through the authenticated PayPal API, validates the exact transaction ID/amount/currency/reference, and settles using `paypal:sale:<transactionId>`. A per-user lock and a single transaction cover `payment`, user balance/plan, `credit_ledger`, subscription entitlement and grant rows. Return-page sync and repeated webhooks cannot duplicate a payment.
+
+Monthly payments grant that month's credits. Annual payments create twelve `subscription_credit_grant` rows anchored to the actual successful payment time; due grants are applied immediately and future grants run through cron. Each payment has its own rows: an old webhook cannot overwrite a newer paid year's installments or move paid-through backwards. `payment.creditsGranted` tracks credits actually issued, including installments.
+
+## Cancellation and paid rights
+
+Users manage PayPal subscriptions in Settings → Billing, including continuing approval, refreshing status, and confirming cancellation. Cancel calls PayPal's actual cancellation API. A cancelled return URL alone does not cancel an active subscription.
+
+`subscription.status` reflects provider state; `currentPeriodEnd` stores paid-through and `nextBillingAt` stores the provider's next scheduled charge. Cancelled or suspended subscriptions retain already purchased rights and installments through the paid period. At expiry the profile stops reporting paid access and cron refreshes `user.planKey`; credits already issued do not expire.
+
+Only one open or unexpired subscription per user is supported. Existing Creem subscriptions must be stopped and their provider/local state verified before starting a replacement; this implementation does not migrate old Creem subscribers or repair Creem's legacy cancellation handling. Uncertain pending approvals are retained to prevent accidentally creating another automatic charge. After a missing create response, retries use the same request ID for up to five hours; unresolved older drafts require merchant review.
+
+Refunded/reversed subscription payments are retained for manual review and pause further installment grants for that subscription. Already-issued credits are not automatically removed. A confirmed refund found during reconciliation also pauses grants. Review and balance repair must update the ledger and balance together; no admin review/repair screen is included.
+
+Admin plan-label edits and user deletion are blocked while a managed PayPal subscription remains open, paid or under review. Cancel through the provider and reconcile the record first; changing `user.planKey` alone cannot stop automatic payments.
+
+## Required cron and reconciliation
+
+Keep the existing authenticated `/api/cron/subscription-grants` running at least hourly, using `CRON_SECRET` or the configured Basic credentials. It processes legacy Creem schedules, reconciles up to five PayPal subscriptions per invocation, applies due PayPal installments and refreshes expired plan labels. A failing subscription is logged and rotated for retry; the response reports `paypalReconciliation` and `paypalGrants`.
+
+Transaction reconciliation advances through at most thirty days per check with a one-day overlap. It does not jump to the last payment after a long outage, and does not move past pending funding. Old missed cycles therefore catch up across subsequent checks. Increase invocation frequency when many subscriptions need checking. Multi-page or unexpected transactions require review rather than silently skipping payments. Failed webhooks can also be resent from PayPal.
+
+Read-only operational queries:
+
+```sql
+SELECT id, user_id, provider_sub_id, status, current_period_end,
+       next_billing_at, transactions_checked_through, billing_review
+FROM subscription WHERE provider = 'paypal' ORDER BY created_at DESC;
+
+SELECT id, event_type, provider_subscription_id, resource_id, status, error
+FROM payment_event WHERE provider = 'paypal' AND status IN ('failed', 'requires_review');
+
+SELECT subscription_id, payment_id, amount, due_at, granted_at
+FROM subscription_credit_grant WHERE granted_at IS NULL ORDER BY due_at;
+```
+
+## Validation
+
+Run `pnpm lint`, `pnpm test --maxWorkers=2`, and `pnpm build`. With a disposable PostgreSQL test database, set `PAYPAL_TEST_DATABASE_URL` and run `pnpm exec vitest run tests/lib/paypal-settlement.integration.test.ts --maxWorkers=1`. Tests create/drop only a random schema in that explicitly configured test database.
+
+Sandbox validation still requires your merchant app and buyer: initial monthly/yearly payment, real renewal, failure/recovery, cancellation, duplicate/out-of-order events, annual cron, and a lost callback. No credentials, paid PayPal plan creation, database migration or live charge is performed merely by building or running ordinary unit tests.
+
+Official references: [Subscriptions API](https://developer.paypal.com/api/subscriptions/v1/), [subscription events](https://developer.paypal.com/subscriptions/webhooks).
