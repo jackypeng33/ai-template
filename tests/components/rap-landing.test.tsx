@@ -49,4 +49,39 @@ describe("BOOTH customer flow", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("Checkout is not open yet");
     expect(fetchMock.mock.calls.filter(([url, options]) => String(url).includes("/api/rap/orders") && options?.method === "POST")).toHaveLength(0);
   });
+  it("rechecks saved photo IDs and blocks payment when either photo is rejected", async () => {
+    auth.signedIn = true;
+    const file = new File(["photo"], "photo.png", { type: "image/png" });
+    draft.read.mockResolvedValue({ left: file, right: file, leftAssetId: "left-id", rightAssetId: "right-id", requestId: crypto.randomUUID(), savedAt: Date.now() });
+    fetchMock.mockImplementation((url: string) => Promise.resolve(Response.json(url.includes("config") ? { checkoutAvailable: true } : url.includes("/assets/") ? { moderationStatus: url.endsWith("left-id") ? "approved" : "rejected" } : { orders: [] })));
+    render(<RapLanding initialCheckoutAvailable />);
+    await screen.findByAltText("left person preview");
+    fireEvent.click(screen.getByRole("button", { name: "Pay $5.99 & generate" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("right photo did not pass");
+    expect(fetchMock.mock.calls.some(([url, options]) => String(url).includes("/orders") && options?.method === "POST")).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith("/assets/left-id"))).toBe(true);
+  });
+  it("uploads directly to the signed URL, confirms it, and waits for server approval", async () => {
+    auth.signedIn = true;
+    const file = new File(["photo"], "photo.png", { type: "image/png" });
+    draft.read.mockResolvedValue({ left: file, right: file, requestId: crypto.randomUUID(), savedAt: Date.now() });
+    fetchMock.mockImplementation((url: string) => Promise.resolve(Response.json(url.includes("config") ? { checkoutAvailable: true } : url === "/api/rap/uploads" ? { uploadId: "upload-id", url: "https://private.r2.invalid/signed" } : url.endsWith("/complete") ? { assetId: "new-asset" } : url.includes("/assets/") ? { moderationStatus: "error" } : { orders: [] })));
+    render(<RapLanding initialCheckoutAvailable />);
+    await screen.findByAltText("left person preview");
+    fireEvent.click(screen.getByRole("button", { name: "Pay $5.99 & generate" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("photo check needs attention");
+    expect(fetchMock.mock.calls.filter(([url, options]) => url === "https://private.r2.invalid/signed" && options.method === "PUT")).toHaveLength(2);
+    expect(fetchMock.mock.calls.some(([url, options]) => String(url).includes("/orders") && options?.method === "POST")).toBe(false);
+  });
+  it.each(["content_rejected", "succeeded"])("does not expose a player for %s without an approved content check", async status => {
+    auth.signedIn = true;
+    fetchMock.mockImplementation((url: string) => Promise.resolve(Response.json(url.includes("config") ? { checkoutAvailable: true } : { orders: [{ id: "rap-test", status: "paid", amountCents: 599, retryCredits: 0, generations: [{ id: "video-id", status, resultExpiresAt: new Date(Date.now() + 86400000).toISOString() }] }] })));
+    const { container } = render(<RapLanding />);
+    await screen.findByRole("button", { name: /My videos/ });
+    fireEvent.click(screen.getByRole("button", { name: /My videos/ }));
+    expect(await screen.findByText(status === "content_rejected" ? "Content not approved" : "Checking your video")).toBeInTheDocument();
+    expect(container.querySelector("video")).toBeNull();
+    expect(screen.queryByRole("link", { name: /Download MP4/ })).toBeNull();
+  });
+
 });

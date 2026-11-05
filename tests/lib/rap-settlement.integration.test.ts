@@ -5,16 +5,18 @@ import postgres from "postgres";
 import { drizzle } from "drizzle-orm/postgres-js";
 import { eq } from "drizzle-orm";
 import * as schema from "@/lib/db/schema";
-import { user, rapAsset, rapOrder, rapGeneration, rapAudit, payment } from "@/lib/db/schema";
+import { user, rapAsset, rapOrder, rapGeneration, rapAudit, rapModeration, payment } from "@/lib/db/schema";
 const holder = vi.hoisted(() => ({ db: undefined as unknown as typeof import("@/lib/db").db }));
-const provider = vi.hoisted(() => ({ create: vi.fn(), query: vi.fn(), upload: vi.fn(), put: vi.fn(), get: vi.fn(), remove: vi.fn(), email: vi.fn() }));
+const provider = vi.hoisted(() => ({ create: vi.fn(), query: vi.fn(), upload: vi.fn(), put: vi.fn(), get: vi.fn(), remove: vi.fn(), email: vi.fn(), persist: vi.fn(), moderate: vi.fn(), exists: vi.fn() }));
 vi.mock("server-only", () => ({}));
 vi.mock("@/lib/db", () => ({ get db() { return holder.db; } }));
 vi.mock("@/lib/rap/kie", () => ({ createKieTask: provider.create, queryKieTask: provider.query, uploadKieAsset: provider.upload }));
-vi.mock("@/lib/rap/storage", () => ({ putRapObject: provider.put, getRapObject: provider.get, deleteRapObject: provider.remove }));
+vi.mock("@/lib/rap/storage", () => ({ putRapObject: provider.put, getRapObject: provider.get, deleteRapObject: provider.remove, persistRapVideo: provider.persist, objectExists: provider.exists, getRapSignedUrl: vi.fn() }));
+vi.mock("@/lib/rap/seeapi", () => ({ rapModerationReady: () => process.env.RAP_MODERATION_ENABLED === "true", queryModeration: provider.moderate, submitModeration: vi.fn(), createModerationBody: vi.fn() }));
 vi.mock("@/lib/email", () => ({ sendEmail: provider.email }));
 import { failRapGeneration, retryRapGeneration, settleRapPayment } from "@/lib/rap/repository";
 import { processRapJobs, sendRapNotifications } from "@/lib/rap/worker";
+import { processRapModeration, MODERATION_POLICY_VERSION } from "@/lib/rap/moderation";
 import { createRapSnapshot } from "@/lib/rap/snapshot";
 import { remoteOrder, capture } from "./paypal-fixtures";
 
@@ -37,13 +39,22 @@ describe.skipIf(!testUrl)("BOOTH durable orders and job queue in PostgreSQL", ()
   beforeEach(async () => {
     provider.create.mockReset(); provider.query.mockReset(); provider.upload.mockReset();
     provider.put.mockReset(); provider.get.mockReset(); provider.remove.mockReset();
-    provider.email.mockReset();
+    provider.email.mockReset(); provider.persist.mockReset(); provider.moderate.mockReset(); provider.exists.mockResolvedValue(true);
+    provider.persist.mockImplementation(async (response: Response) => {
+      if (!response.ok) throw new Error("download failed");
+      return { mediaHash: "video-hash" };
+    });
+    vi.stubEnv("RAP_MODERATION_ENABLED", "true"); vi.stubEnv("SEEAPI_API_KEY", "test-only");
     provider.upload.mockResolvedValue("https://tempfile.redpandaai.co/ref.jpg"); provider.get.mockResolvedValue(Buffer.from("reference"));
     provider.create.mockResolvedValue("TASK-1");
     vi.stubEnv("RAP_VIDEO_GENERATION_ENABLED", "false");
     await client.unsafe("TRUNCATE rap_feedback, rap_audit, rap_generation, rap_order, rap_asset, payment, \"user\" CASCADE");
     await holder.db.insert(user).values({ id: "buyer", name: "Buyer", email: "buyer@local.test", credits: 300 });
-    for (const id of [left, right]) await holder.db.insert(rapAsset).values({ id, userId: "buyer", storageKey: `rap/${id}/${id}.jpg`, width: 800, height: 1000, expiresAt: new Date(Date.now() + 3600_000) });
+    for (const id of [left, right]) await holder.db.insert(rapAsset).values({ id, userId: "buyer", storageKey: `rap/${id}/${id}.jpg`, width: 800, height: 1000, mediaHash: `hash-${id}`, expiresAt: new Date(Date.now() + 3600_000) });
+    for (const id of [left, right]) await holder.db.insert(rapModeration).values({
+      id: randomUUID(), userId: "buyer", assetId: id, mediaHash: `hash-${id}`, storageKey: `rap/${id}/${id}.jpg`,
+      policyVersion: MODERATION_POLICY_VERSION, status: "approved", idempotencyKey: randomUUID(),
+    });
     await holder.db.insert(rapOrder).values({ id: orderId, userId: "buyer", requestId: randomUUID(), leftAssetId: left, rightAssetId: right,
       snapshot: await createRapSnapshot(), amountCents: 500, currency: "usd", merchantId: "merchant", environment: "sandbox", providerOrderId: remote.id });
   });
@@ -132,14 +143,16 @@ describe.skipIf(!testUrl)("BOOTH durable orders and job queue in PostgreSQL", ()
     expect((await holder.db.select().from(rapGeneration))[0]).toMatchObject({ status: "waiting", providerTaskId: "TASK-1" });
     expect((await holder.db.select().from(rapOrder))[0].retryCredits).toBe(0);
   });
-  it("only announces success after a provider result is stored privately", async () => {
-    const task = await queryableTask(); provider.query.mockResolvedValue({ state: "success", resultUrl: "https://tempfile.aiquickdraw.com/video.mp4", creditsConsumed: 30 });
+  it("holds a privately stored result for audit without announcing success", async () => {
+    await queryableTask(); provider.query.mockResolvedValue({ state: "success", resultUrl: "https://tempfile.aiquickdraw.com/video.mp4", creditsConsumed: 30 });
     // Deliberately synthetic container header; never exposed as a real sample.
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(Buffer.from("0000ftypisom000000000000"))));
     await processRapJobs(1);
-    expect(provider.put).toHaveBeenCalledTimes(1);
-    expect((await holder.db.select().from(rapGeneration))[0]).toMatchObject({ status: "succeeded", resultKey: `rap/${task.id}/${task.id}.mp4`, providerCredits: "30" });
+    expect(provider.persist).toHaveBeenCalledTimes(1);
+    expect((await holder.db.select().from(rapGeneration))[0]).toMatchObject({ status: "moderating", mediaHash: "video-hash", providerCredits: "30", resultExpiresAt: null });
     expect((await holder.db.select().from(rapOrder))[0].retryCredits).toBe(0); expect(provider.create).not.toHaveBeenCalled();
+    await sendRapNotifications(); expect(provider.email).not.toHaveBeenCalled();
+    expect((await holder.db.select().from(rapModeration)).filter(r => r.generationId)).toHaveLength(1);
   });
   it("turns a verified provider failure into exactly one replacement", async () => {
     await queryableTask(); provider.query.mockResolvedValue({ state: "fail" }); await processRapJobs(1); await processRapJobs(1);
@@ -148,12 +161,66 @@ describe.skipIf(!testUrl)("BOOTH durable orders and job queue in PostgreSQL", ()
   });
   it("does not mark provider-rejected mail as sent, and retries without changing the video", async () => {
     await settleRapPayment(orderId, remote, receipt); const [task] = await holder.db.select().from(rapGeneration);
-    await holder.db.update(rapGeneration).set({ status: "succeeded", resultExpiresAt: new Date(Date.now() + 3600_000) }).where(eq(rapGeneration.id, task.id));
+    await holder.db.update(rapGeneration).set({ status: "succeeded", mediaHash: "video-hash", resultKey: "rap/video/video.mp4", resultExpiresAt: new Date(Date.now() + 3600_000) }).where(eq(rapGeneration.id, task.id));
+    await holder.db.insert(rapModeration).values({ id: randomUUID(), userId: "buyer", generationId: task.id,
+      mediaHash: "video-hash", storageKey: "rap/video/video.mp4", policyVersion: MODERATION_POLICY_VERSION,
+      status: "approved", idempotencyKey: randomUUID() });
     provider.email.mockResolvedValueOnce({ success: true, data: { error: { message: "Rejected by email service" } } });
     await sendRapNotifications(); expect((await holder.db.select().from(rapGeneration))[0].emailSentAt).toBeNull();
     await holder.db.update(rapGeneration).set({ emailAttemptedAt: new Date(0) }).where(eq(rapGeneration.id, task.id));
     provider.email.mockResolvedValueOnce({ success: true, data: { error: null, data: { id: "sent" } } });
     await sendRapNotifications(); const [saved] = await holder.db.select().from(rapGeneration);
     expect(saved.emailSentAt).not.toBeNull(); expect(saved.status).toBe("succeeded"); expect(provider.create).not.toHaveBeenCalled();
+  });
+
+  it("does not consume a replacement when the replacement photos were rejected", async () => {
+    await settleRapPayment(orderId, remote, receipt);
+    const [task] = await holder.db.select().from(rapGeneration);
+    await failRapGeneration(task.id, "PROVIDER_FAILED");
+    await holder.db.update(rapModeration).set({ status: "rejected" }).where(eq(rapModeration.assetId, left));
+    await expect(retryRapGeneration(orderId, "buyer", { requestId: randomUUID(), leftAssetId: left, rightAssetId: right })).rejects.toThrow("CONTENT_REJECTED");
+    expect((await holder.db.select().from(rapOrder))[0].retryCredits).toBe(1);
+    expect(await holder.db.select().from(rapGeneration)).toHaveLength(1);
+  });
+  async function pendingVideoAudit() {
+    await settleRapPayment(orderId, remote, receipt);
+    const [task] = await holder.db.select().from(rapGeneration);
+    await holder.db.update(rapGeneration).set({ status: "moderating", mediaHash: "video-hash", resultKey: "rap/video/video.mp4", persistedAt: new Date() }).where(eq(rapGeneration.id, task.id));
+    await holder.db.insert(rapModeration).values({ id: randomUUID(), userId: "buyer", generationId: task.id,
+      mediaHash: "video-hash", storageKey: "rap/video/video.mp4", policyVersion: MODERATION_POLICY_VERSION,
+      status: "processing", providerTaskId: "audit-video", idempotencyKey: randomUUID() });
+    return task;
+  }
+  it("finishes a clean audited video only once under concurrent worker claims", async () => {
+    await pendingVideoAudit();
+    provider.moderate.mockResolvedValue({ status: "succeeded", error: null, result: { type: "json", data: { flagged: false, output: {
+      nsfw_detected: false, scope: "sampled_frames", sampling_complete: true, checked_frames: 1, flagged_frame_count: 0,
+      timestamp_source: "frame_index_div_fps_estimate", output_layout: "named-files-v1", report_schema_version: 5,
+      frames: [{ frame_number: 0, timestamp_seconds: 0, nsfw_detected: false, nsfw: [] }],
+    } } } });
+    await Promise.all(Array.from({ length: 8 }, () => processRapModeration(1)));
+    const [saved] = await holder.db.select().from(rapGeneration);
+    expect(saved.status).toBe("succeeded"); expect(saved.resultExpiresAt).not.toBeNull();
+    expect((await holder.db.select().from(rapAudit)).filter(r => r.kind === "video_ready")).toHaveLength(1);
+    await processRapModeration(1);
+    expect((await holder.db.select().from(rapGeneration))[0].resultExpiresAt).toEqual(saved.resultExpiresAt);
+    expect(provider.moderate).toHaveBeenCalledTimes(1);
+    expect(provider.create).not.toHaveBeenCalled();
+  });
+  it("rejects audited content without granting technical-failure compensation", async () => {
+    await pendingVideoAudit();
+    provider.moderate.mockResolvedValue({ status: "succeeded", error: null, result: { type: "json", data: { flagged: true, output: null, reason: "content_policy_blocked" } } });
+    await Promise.all([processRapModeration(1), processRapModeration(1)]);
+    expect((await holder.db.select().from(rapGeneration))[0].status).toBe("content_rejected");
+    expect((await holder.db.select().from(rapOrder))[0].retryCredits).toBe(0);
+    expect((await holder.db.select().from(rapAudit)).filter(r => r.kind === "failure_replacement")).toHaveLength(0);
+    await sendRapNotifications(); expect(provider.email).not.toHaveBeenCalled();
+  });
+  it("still records a completed capture when a prior input assessment no longer passes", async () => {
+    await holder.db.update(rapModeration).set({ status: "rejected" }).where(eq(rapModeration.assetId, left));
+    await settleRapPayment(orderId, remote, receipt);
+    expect(await holder.db.select().from(payment)).toHaveLength(1);
+    expect((await holder.db.select().from(rapOrder))[0].status).toBe("paid");
+    expect(await holder.db.select().from(rapGeneration)).toHaveLength(1);
   });
 });

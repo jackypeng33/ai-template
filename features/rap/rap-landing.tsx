@@ -9,10 +9,22 @@ import { readRapDraft, writeRapDraft, clearRapDraft, type RapDraft } from "./dra
 import s from "./rap.module.css";
 import { trackRap } from "./metrics";
 
-type Generation = { id: string; status: string; error: string | null; createdAt: string; resultExpiresAt: string | null };
+type ModerationStatus = "pending" | "processing" | "approved" | "rejected" | "error";
+type Generation = { id: string; status: string; error: string | null; createdAt: string; resultExpiresAt: string | null; moderatedAt?: string | null };
 type Order = { id: string; status: string; amountCents: number; retryCredits: number; createdAt: string; generations: Generation[] };
 const price = `$${(RAP_PRODUCT.priceCents / 100).toFixed(2)}`;
 const errorMessages: Record<string, string> = {
+  MODERATION_DISABLED: "Photo checks are temporarily unavailable. Please try again later.",
+  CONTENT_REQUIRES_MODERATION: "Your saved photos need a new content check. Please select them again.",
+  CONTENT_MODERATION_PENDING: "Your photos are still being checked. Continue again in a moment.",
+  MODERATION_REQUIRES_REVIEW: "Your photo check needs attention. Please try again later or contact support.",
+  UPLOAD_LIMIT_REACHED: "Too many upload attempts. Please wait before trying again.",
+  UPLOAD_CONFIRMING: "Your photo is still being saved. Please try again in a moment.",
+  PRIVATE_STORAGE_REQUIRED: "Photo uploads are temporarily unavailable. Please try again later.",
+  MODERATION_PENDING: "Your photos are still being checked. Continue again in a moment.",
+  CONTENT_REJECTED: "A photo did not pass our content check. Please replace it.",
+  MODERATION_ERROR: "Your photo check needs attention. Please try again later or contact support.",
+  UPLOAD_RATE_LIMITED: "Too many upload attempts. Please wait before trying again.",
   CHECKOUT_NOT_OPEN: "Checkout is not open yet. You can prepare your photos and listen to the track.",
   PHOTOS_EXPIRED: "Your saved photos have expired. Please select them again.",
   SIGN_IN_REQUIRED: "Please sign in to continue. Your photos are saved in this browser.",
@@ -25,8 +37,8 @@ const errorMessages: Record<string, string> = {
   SERVICE_UNAVAILABLE: "We could not reach the service. Your photos are still here. Please try again.",
   REQUEST_CONFLICT: "This saved checkout belongs to different photos. Re-select your photos to start a new checkout.",
 };
-async function api<T>(url: string, body?: unknown): Promise<T> {
-  const response = await fetch(url, { credentials: "include", cache: "no-store", ...(body === undefined ? {} : {
+async function api<T>(url: string, body?: unknown, signal?: AbortSignal): Promise<T> {
+  const response = await fetch(url, { credentials: "include", cache: "no-store", signal, ...(body === undefined ? {} : {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
   }) });
   const data = await response.json();
@@ -60,6 +72,9 @@ export function RapLanding({ googleEnabled = false, initialCheckoutAvailable = f
   const [retryOrder, setRetryOrder] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null); const [feedbackSent, setFeedbackSent] = useState(false);
   const authDialog = useRef<HTMLDialogElement>(null); const feedbackDialog = useRef<HTMLDialogElement>(null);
+  const operation = useRef<AbortController | null>(null);
+  const [photoChecks, setPhotoChecks] = useState<Partial<Record<"left" | "right", ModerationStatus>>>({});
+  const [checkingPhotos, setCheckingPhotos] = useState(false);
   const lock = useRef(false); const audioRef = useRef<HTMLAudioElement>(null); const [playing, setPlaying] = useState(false);
 
   useEffect(() => {
@@ -69,7 +84,7 @@ export function RapLanding({ googleEnabled = false, initialCheckoutAvailable = f
       .catch(() => { if (alive) { setDraft({ requestId: crypto.randomUUID(), savedAt: Date.now() }); setNotice("Browser storage is unavailable. Keep this tab open while signing in."); } });
     api<{ checkoutAvailable: boolean; supportEmail: string | null }>("/api/rap/config").then(config => { if (alive) { setCheckoutAvailable(config.checkoutAvailable); setSupport(config.supportEmail); } }).catch(() => {});
     if (new URLSearchParams(window.location.search).has("cancelled")) setNotice("Payment was cancelled. Your photos are still here; no new generation was started by this return page.");
-    return () => { alive = false; };
+    return () => { alive = false; operation.current?.abort(); };
   }, []);
   useEffect(() => { if (authOpen) authDialog.current?.showModal(); else authDialog.current?.close(); }, [authOpen]);
   useEffect(() => { if (feedback) feedbackDialog.current?.showModal(); else feedbackDialog.current?.close(); }, [feedback]);
@@ -92,7 +107,7 @@ export function RapLanding({ googleEnabled = false, initialCheckoutAvailable = f
   }, [signedIn, loadOrders]);
   useEffect(() => {
     if (!showOrders || !signedIn) return;
-    const pending = orders.some(o => o.status === "created" || o.generations.some(g => !["succeeded", "failed", "expired"].includes(g.status)));
+    const pending = orders.some(o => o.status === "created" || o.generations.some(g => !["succeeded", "failed", "expired", "content_rejected"].includes(g.status)));
     if (!pending) return;
     const timer = setInterval(() => { if (document.visibilityState === "visible") void loadOrders(); }, 10_000);
     return () => clearInterval(timer);
@@ -107,7 +122,10 @@ export function RapLanding({ googleEnabled = false, initialCheckoutAvailable = f
     if (file && (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > RAP_PRODUCT.maxImageBytes)) {
       setError("Use a JPG, PNG or WebP photo, 10 MB or smaller."); return;
     }
-    await persist({ ...draft, [side]: file, leftAssetId: undefined, rightAssetId: undefined, requestId: crypto.randomUUID(), savedAt: Date.now() });
+    operation.current?.abort();
+    setPhotoChecks(previous => ({ ...previous, [side]: undefined }));
+    setNotice("");
+    await persist({ ...draft, [side]: file, [side === "left" ? "leftAssetId" : "rightAssetId"]: undefined, requestId: crypto.randomUUID(), savedAt: Date.now() });
   }
   async function loadSamplePhotos() {
     if (lock.current) return; lock.current = true; setBusy(true); setError("");
@@ -117,11 +135,35 @@ export function RapLanding({ googleEnabled = false, initialCheckoutAvailable = f
       setNotice("Sample photos loaded. No video is generated by selecting them.");
     } catch { setError("Could not load the sample photos."); } finally { lock.current = false; setBusy(false); }
   }
-  async function upload(file: File) {
-    const form = new FormData(); form.set("file", file);
-    const response = await fetch("/api/rap/assets", { method: "POST", credentials: "include", body: form });
-    const data = await response.json(); if (!response.ok) throw new Error(errorMessages[data.error] || "Photo upload failed. Please try again.");
-    return data.assetId as string;
+  async function upload(file: File, signal: AbortSignal) {
+    const intent = await api<{ uploadId: string; url: string }>("/api/rap/uploads", { contentType: file.type, size: file.size }, signal);
+    const response = await fetch(intent.url, { method: "PUT", headers: { "Content-Type": file.type }, body: file, signal });
+    if (!response.ok) throw new Error("Photo upload failed. Please try again.");
+    const saved = await api<{ assetId: string }>(`/api/rap/uploads/${intent.uploadId}/complete`, {}, signal);
+    return saved.assetId;
+  }
+  async function checkPhotos(next: RapDraft, signal: AbortSignal) {
+    setCheckingPhotos(true);
+    setNotice("Checking your photos before payment. You will not be charged while they are being checked.");
+    for (let attempt = 0; attempt < 15; attempt++) {
+      signal.throwIfAborted();
+      const statuses = await Promise.all((["left", "right"] as const).map(async side => {
+        const result = await api<{ moderationStatus: ModerationStatus }>(`/api/rap/assets/${side === "left" ? next.leftAssetId : next.rightAssetId}`, undefined, signal);
+        return [side, result.moderationStatus] as const;
+      }));
+      signal.throwIfAborted();
+      setPhotoChecks(Object.fromEntries(statuses));
+      const rejected = statuses.find(([, status]) => status === "rejected");
+      if (rejected) throw new Error(`The ${rejected[0]} photo did not pass our content check. Please replace it to continue.`);
+      if (statuses.some(([, status]) => status === "error")) throw new Error(errorMessages.MODERATION_ERROR);
+      if (statuses.every(([, status]) => status === "approved")) { setNotice("Your photos passed the content check."); return; }
+      if (attempt < 14) await new Promise<void>((resolve, reject) => {
+        const abort = () => { clearTimeout(timer); reject(new DOMException("Cancelled", "AbortError")); };
+        const timer = setTimeout(() => { signal.removeEventListener("abort", abort); resolve(); }, 2000);
+        signal.addEventListener("abort", abort, { once: true });
+      });
+    }
+    throw new Error("Your photos are still being checked. Click continue again in a moment to resume. You have not been charged.");
   }
   async function checkout() {
     if (!draft?.left || !draft.right) { setError("Add both photos first: you on the left, your friend on the right."); return; }
@@ -129,21 +171,27 @@ export function RapLanding({ googleEnabled = false, initialCheckoutAvailable = f
     if (!signedIn) { await persist(draft); setError(""); trackRap("sign_in_opened"); setAuthOpen(true); return; }
     if (!checkoutAvailable) { setError(errorMessages.CHECKOUT_NOT_OPEN); return; }
     if (lock.current) return; lock.current = true; setBusy(true); setError("");
+    const controller = new AbortController(); operation.current = controller;
+    const signal = controller.signal;
     trackRap("checkout_clicked");
     try {
       const next = { ...draft };
-      if (!next.leftAssetId) { next.leftAssetId = await upload(next.left!); await persist(next); }
-      if (!next.rightAssetId) { next.rightAssetId = await upload(next.right!); await persist(next); }
+      if (!next.leftAssetId) { next.leftAssetId = await upload(next.left!, signal); signal.throwIfAborted(); await persist(next); }
+      if (!next.rightAssetId) { next.rightAssetId = await upload(next.right!, signal); signal.throwIfAborted(); await persist(next); }
+      await checkPhotos(next, signal);
+      signal.throwIfAborted();
       if (retryOrder) {
-        await api(`/api/rap/orders/${retryOrder}`, { action: "retry", requestId: next.requestId, leftAssetId: next.leftAssetId, rightAssetId: next.rightAssetId });
+        await api(`/api/rap/orders/${retryOrder}`, { action: "retry", requestId: next.requestId, leftAssetId: next.leftAssetId, rightAssetId: next.rightAssetId }, signal);
+        signal.throwIfAborted();
         setRetryOrder(null); setShowOrders(true); setNotice("Your replacement is queued. You can leave this page.");
         await clearRapDraft(); setDraft({ requestId: crypto.randomUUID(), savedAt: Date.now() }); await loadOrders();
       } else {
         const result = await api<{ url: string }>("/api/rap/orders", { requestId: next.requestId, leftAssetId: next.leftAssetId,
-          rightAssetId: next.rightAssetId, priceCents: RAP_PRODUCT.priceCents, productKey: RAP_PRODUCT.key });
+          rightAssetId: next.rightAssetId, priceCents: RAP_PRODUCT.priceCents, productKey: RAP_PRODUCT.key }, signal);
+        signal.throwIfAborted();
         window.location.assign(result.url);
       }
-    } catch (e) { setError((e as Error).message); } finally { setBusy(false); lock.current = false; }
+    } catch (e) { if (!signal.aborted) setError((e as Error).message); } finally { setCheckingPhotos(false); setBusy(false); lock.current = false; operation.current = null; }
   }
   async function authSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault(); setAuthBusy(true); setError("");
@@ -197,11 +245,12 @@ export function RapLanding({ googleEnabled = false, initialCheckoutAvailable = f
         </div>
         <div className={s.creator}><div className={s.creatorHeading}><strong>BUILD YOUR DUO</strong><span>STEP 1 OF 1</span></div>
           <div className={s.photoGrid}><PhotoSlot side="left" file={draft?.left} onChange={f => void choose("left", f)} /><span className={s.photoPlus}>+</span><PhotoSlot side="right" file={draft?.right} onChange={f => void choose("right", f)} /></div>
-          <div className={s.photoHelp}>Clear, front-facing photos work best. One adult per photo. At least 300 × 300 px; up to 10 MB each. Use photos you have permission to use.</div>
+          <div className={s.photoHelp}>Clear, front-facing photos work best. One adult per photo. At least 300 × 300 px; up to 10 MB each. Use photos you have permission to use. NSFW content is not allowed.</div>
+          {Object.entries(photoChecks).map(([side, status]) => <p key={side} className={s.notice} role="status">{side === "left" ? "Your photo" : "Your friend’s photo"}: {status === "approved" ? "Content check passed" : status === "rejected" ? "Not approved — replace this photo" : status === "error" ? "Check delayed — try again later" : "Checking content…"}</p>)}
           <button className={s.sampleButton} disabled={busy || !draft} onClick={() => void loadSamplePhotos()}><Sparkles size={14} /> Just exploring? Try the sample photos <ChevronRight size={14} /></button>
           <div className={s.checkoutSummary}><div><strong>{retryOrder ? "Your replacement" : "One duo. One video."}</strong><span>{retryOrder ? "Uses your returned generation opportunity" : "One-time payment. No subscription."}</span></div><strong className={s.price}>{retryOrder ? "$0" : price}<small>USD</small></strong></div>
           {retryOrder && <button className={s.textButton} onClick={() => setRetryOrder(null)}>Cancel replacement selection</button>}
-          <button className={s.payButton} disabled={busy || !draft} onClick={() => void checkout()}>{busy ? <LoaderCircle className={s.spin} size={18} /> : <Mic2 size={18} />}{busy ? "Preparing your checkout…" : retryOrder ? "Use replacement & generate" : signedIn ? `Pay ${price} & generate` : "Continue with your photos"}<ArrowUpRight size={19} /></button>
+          <button className={s.payButton} disabled={busy || !draft} onClick={() => void checkout()}>{busy ? <LoaderCircle className={s.spin} size={18} /> : <Mic2 size={18} />}{busy ? checkingPhotos ? "Checking photos…" : "Preparing your checkout…" : retryOrder ? "Use replacement & generate" : signedIn ? `Pay ${price} & generate` : "Continue with your photos"}<ArrowUpRight size={19} /></button>
           {!checkoutAvailable && <div className={s.previewNotice}>PREVIEW MODE — Payments and video generation are paused. No video API is called.</div>}
           <div className={s.secureLine}><ShieldCheck size={13} /> PayPal checkout · Photos deleted within 24h of task completion · Video kept 7 days</div>
           <p className={s.termsLine}>By purchasing, you accept the <Link href="/rap/policy#terms">terms</Link>, <Link href="/rap/policy#privacy">privacy</Link> and <Link href="/rap/policy#refunds">refund policy</Link>.</p>
@@ -212,8 +261,8 @@ export function RapLanding({ googleEnabled = false, initialCheckoutAvailable = f
       {signedIn && <section id="my-videos" className={s.ordersSection}><div className={s.ordersHeading}><div><span className={s.kicker}>YOUR SESSIONS</span><h2>MY VIDEOS.</h2></div><button className={s.accountButton} onClick={() => { setShowOrders(v => !v); void loadOrders(); }}>{showOrders ? "Hide" : "View sessions"}<RefreshCw size={14} /></button></div>
         {showOrders && (orders.length ? <div className={s.orderGrid}>{orders.map(order => <article key={order.id} className={s.orderCard}><div className={s.orderTop}><span>SESSION {order.id.slice(-6).toUpperCase()}</span><span>${(order.amountCents / 100).toFixed(2)}</span></div>
           {!order.generations.length && <p>{order.status === "created" ? "Payment not confirmed yet." : "This order needs a support check."}</p>}
-          {order.generations.map(task => <div className={s.task} key={task.id}><strong>{statusLabel(task.status)}</strong>
-            {task.status === "succeeded" && task.resultExpiresAt && new Date(task.resultExpiresAt) > new Date() && order.status === "paid" ? <><video controls preload="metadata" playsInline src={`/api/rap/generations/${task.id}/media`} /><a className={s.download} href={`/api/rap/generations/${task.id}/media?download=1`}><Download size={15} /> Download MP4</a><small>Download before {new Date(task.resultExpiresAt).toLocaleString("en-US")}</small></> : <p>{task.status === "failed" ? "The task failed. An eligible replacement is shown below." : ["submission_unknown", "requires_review"].includes(task.status) ? "We're checking the original task. Please don't submit another payment. You may request help or a refund below." : task.status === "expired" || task.status === "succeeded" ? "The download window has ended. Your order is still available for support." : "You can leave this page. We'll email you when your video is ready."}</p>}
+          {order.generations.map(task => <div className={s.task} key={task.id}><strong>{statusLabel(task.status === "succeeded" && !task.moderatedAt ? "moderating" : task.status)}</strong>
+            {task.status === "succeeded" && task.moderatedAt && task.resultExpiresAt && new Date(task.resultExpiresAt) > new Date() && order.status === "paid" ? <><video controls preload="metadata" playsInline src={`/api/rap/generations/${task.id}/media`} /><a className={s.download} href={`/api/rap/generations/${task.id}/media?download=1`}><Download size={15} /> Download MP4</a><small>Download before {new Date(task.resultExpiresAt).toLocaleString("en-US")}</small></> : <p>{task.status === "content_rejected" ? "This video did not pass our content check and cannot be played or downloaded. Contact support below for help." : (task.status === "moderating" || task.status === "succeeded" && !task.moderatedAt) ? "Your video is being checked before it becomes available. You can leave this page." : task.status === "failed" ? "The task failed. An eligible replacement is shown below." : ["submission_unknown", "requires_review"].includes(task.status) ? "We're checking the original task. Please don't submit another payment. You may request help or a refund below." : task.status === "expired" || task.status === "succeeded" ? "The download window has ended. Your order is still available for support." : "You can leave this page. We'll email you when your video is ready."}</p>}
           </div>)}
           <div className={s.orderActions}>{order.status === "created" && <button className={s.textButton} onClick={async () => { try { await api(`/api/rap/orders/${order.id}`, { action: "sync" }); await loadOrders(); } catch (e) { setError((e as Error).message); } }}>Check payment</button>}
             {order.status === "paid" && order.retryCredits > 0 && <button className={s.textButton} onClick={() => { setRetryOrder(order.id); document.getElementById("create")?.scrollIntoView({ behavior: "smooth" }); }}>Use replacement ({order.retryCredits}) ↗</button>}
@@ -235,6 +284,7 @@ export function RapLanding({ googleEnabled = false, initialCheckoutAvailable = f
           ['How long does it take?', 'Timing depends on the queue and provider. You can leave the page; the job continues and we email you when it is ready. After 30 minutes without a final result, it is flagged for support review rather than automatically resubmitted.'],
           ['What if the video fails or I do not like it?', 'A confirmed technical failure returns one generation opportunity. You can change the photos and manually try again. For an unsatisfactory completed video, use Report a problem on your order to request an individual review. Refunds and extra replacements are reviewed by support.'],
           ['What happens to my photos and video?', 'Photos in our system are deleted within 24 hours of task completion. Unpaid drafts expire after 24 hours; unresolved input photos are retained for at most 7 days. Videos are available for 7 days after completion. Provider retention is separate; see our privacy notice.'],
+          ['Are photos and videos checked?', 'Yes. SeeAPI checks uploaded photos before payment and generated videos before delivery. NSFW content is not allowed. Automated checks can make mistakes; contact support if you need help.'],
           ['Is the picture above a real generated video?', 'No. It is labeled concept artwork showing the intended template. Video generation and checkout stay paused until the soundtrack, quality checks and payment setup are approved.'],
         ].map(([q, a]) => <details key={q}><summary>{q}<Plus size={17} /></summary><p>{a}</p></details>)}
       </div></section>
@@ -254,5 +304,5 @@ export function RapLanding({ googleEnabled = false, initialCheckoutAvailable = f
 
 function statusLabel(status: string) {
   return ({ queued: "In the queue", preparing: "Preparing your session", submitting: "Submitting your session", submission_unknown: "Submission under review",
-    waiting: "Waiting for the booth", generating: "Recording your moment", persisting: "Saving your video", requires_review: "Support review needed", succeeded: "Your duo is ready", failed: "Generation failed", expired: "Video expired" } as Record<string, string>)[status] || "Checking your session";
+    waiting: "Waiting for the booth", generating: "Recording your moment", persisting: "Saving your video", moderating: "Checking your video", content_rejected: "Content not approved", requires_review: "Support review needed", succeeded: "Your duo is ready", failed: "Generation failed", expired: "Video expired" } as Record<string, string>)[status] || "Checking your session";
 }

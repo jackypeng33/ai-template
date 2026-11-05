@@ -1,3 +1,4 @@
+import { rapStorageReady } from "./r2-config";
 export const RAP_PRODUCT = {
   name: "BOOTH", key: "booth-duo-v1", templateVersion: "orange-booth-en-v1",
   priceCents: 599, currency: "usd", duration: 8, resolution: "720p", aspectRatio: "9:16",
@@ -17,11 +18,9 @@ export function rapGenerationEnabled() {
 }
 
 export function rapCheckoutReady() {
-  return rapGenerationEnabled() && process.env.RAP_CHECKOUT_ENABLED === "true" &&
+  return rapGenerationEnabled() && process.env.RAP_MODERATION_ENABLED === "true" && Boolean(process.env.SEEAPI_API_KEY) && rapStorageReady() && process.env.RAP_CHECKOUT_ENABLED === "true" &&
     process.env.RAP_QUALITY_APPROVED === "true" && process.env.RAP_MUSIC_RIGHTS_APPROVED === "true" &&
-    Boolean(process.env.KIE_API_KEY && process.env.CRON_SECRET && process.env.RESEND_API_KEY && process.env.RAP_SUPPORT_EMAIL && process.env.RAP_PAYPAL_WEBHOOK_ID) &&
-    (process.env.NODE_ENV !== "production" || Boolean(process.env.RAP_STORAGE_BUCKET &&
-      process.env.STORAGE_ACCESS_KEY_ID && process.env.STORAGE_SECRET_ACCESS_KEY && process.env.STORAGE_ENDPOINT));
+    Boolean(process.env.KIE_API_KEY && process.env.CRON_SECRET && process.env.RESEND_API_KEY && process.env.RAP_SUPPORT_EMAIL && process.env.RAP_PAYPAL_WEBHOOK_ID);
 }
 
 export function assertRapCheckoutReady() {

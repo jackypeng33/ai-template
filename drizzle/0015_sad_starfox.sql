@@ -1,0 +1,1 @@
+ALTER TABLE "rap_upload" ADD COLUMN "lease_until" timestamp;

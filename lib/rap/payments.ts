@@ -46,6 +46,7 @@ export async function startRapCheckout(userId: string, input: z.infer<typeof che
   checkConfig(order);
   if (order.paymentId) return { orderId: order.id, url: rapReturnUrl(order.id) };
   if (["refunded", "requires_review"].includes(order.status)) throw new RapError(409, "ORDER_REQUIRES_REVIEW");
+  await assertAssets(userId, order.leftAssetId, order.rightAssetId);
   if (order.approvalUrl) return { orderId: order.id, url: order.approvalUrl };
   if (!order.providerOrderId && Date.now() - order.createdAt.getTime() > 5 * 3600_000) throw new RapError(409, "ORDER_REQUIRES_REVIEW");
   const summary = order.providerOrderId ? null : paypalOrderSchema.pick({ id: true, links: true }).parse(await paypalRequest("/v2/checkout/orders", "POST", {

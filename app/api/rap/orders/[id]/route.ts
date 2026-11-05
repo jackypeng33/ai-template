@@ -12,7 +12,7 @@ export async function GET(request: Request, context: Context) {
   try {
     const user = await rapAccess(request); const { id } = await context.params; const order = await ownedOrder(id, user.id);
     const generations = await db.select({ id: rapGeneration.id, status: rapGeneration.status, error: rapGeneration.error,
-      createdAt: rapGeneration.createdAt, resultExpiresAt: rapGeneration.resultExpiresAt }).from(rapGeneration)
+      createdAt: rapGeneration.createdAt, moderatedAt: rapGeneration.moderatedAt, resultExpiresAt: rapGeneration.resultExpiresAt }).from(rapGeneration)
       .where(and(eq(rapGeneration.orderId, id), eq(rapGeneration.userId, user.id))).orderBy(desc(rapGeneration.createdAt));
     return privateJson({ order: { id, status: order.status, amountCents: order.amountCents, retryCredits: order.retryCredits, generations } });
   } catch (error) { return rapErrorResponse(error); }

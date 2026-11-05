@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { rapAudit, rapFeedback, rapGeneration, rapOrder, rapMetric, payment } from "@/lib/db/schema";
+import { rapAudit, rapFeedback, rapGeneration, rapOrder, rapMetric, rapModeration, payment } from "@/lib/db/schema";
 import { rapAccess, rapErrorResponse, privateJson } from "@/lib/rap/http";
 import { RapError } from "@/lib/rap/config";
 import { activeStatuses } from "@/lib/rap/repository";
@@ -22,7 +22,10 @@ export async function GET(request: Request) {
       .from(rapGeneration).orderBy(desc(rapGeneration.createdAt)).limit(200);
     const counts = await db.select({ kind: rapAudit.kind, count: sql<number>`count(*)::int` }).from(rapAudit).groupBy(rapAudit.kind);
     const funnel = await db.select({ kind: rapMetric.event, count: sql<number>`count(*)::int` }).from(rapMetric).groupBy(rapMetric.event);
-    return privateJson({ feedback, orders, tasks, counts: [...counts, ...funnel] });
+    const moderation = await db.select({ id: rapModeration.id, assetId: rapModeration.assetId, generationId: rapModeration.generationId,
+      status: rapModeration.status, reason: rapModeration.reason, attempts: rapModeration.attempts,
+      providerTaskId: rapModeration.providerTaskId, createdAt: rapModeration.createdAt }).from(rapModeration).orderBy(desc(rapModeration.createdAt)).limit(100);
+    return privateJson({ feedback, orders, tasks, moderation, counts: [...counts, ...funnel] });
   } catch (error) { return rapErrorResponse(error); }
 }
 export async function POST(request: Request) {

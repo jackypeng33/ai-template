@@ -1,15 +1,16 @@
 import "server-only";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { and, eq, gt, inArray, isNotNull, isNull, lt, lte, or } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { rapGeneration, rapOrder, rapAsset, rapAudit, rapFeedback, rapMetric, user } from "@/lib/db/schema";
+import { rapGeneration, rapOrder, rapAsset, rapFeedback, rapMetric, rapModeration, rapUpload, user } from "@/lib/db/schema";
 import { sendEmail } from "@/lib/email";
 import { RAP_PRODUCT, RapError, rapGenerationEnabled } from "./config";
 import { afterHours, failRapGeneration, type RapGeneration } from "./repository";
-import { getRapObject, putRapObject, deleteRapObject } from "./storage";
+import { getRapObject, deleteRapObject, persistRapVideo } from "./storage";
 import { uploadKieAsset, createKieTask, queryKieTask } from "./kie";
-import { readLimited, safeProviderUrl } from "./validation";
+import { safeProviderUrl } from "./validation";
 import { completeRapPayment } from "./payments";
+import { assertRapAssetsApproved, assertRapVideoApproved, queueRapModeration } from "./moderation";
 import { verifiedRapMusic } from "./snapshot";
 
 async function defer(task: RapGeneration, error?: string) {
@@ -17,6 +18,7 @@ async function defer(task: RapGeneration, error?: string) {
     updatedAt: new Date(), ...(error ? { error } : {}) }).where(and(eq(rapGeneration.id, task.id), eq(rapGeneration.leaseUntil, task.leaseUntil!)));
 }
 async function runTask(task: RapGeneration) {
+  if (["moderating", "content_rejected", "succeeded", "expired"].includes(task.status)) return;
   const [order] = await db.select().from(rapOrder).where(eq(rapOrder.id, task.orderId));
   if (!order || order.status !== "paid") {
     await db.update(rapGeneration).set({ status: "requires_review", error: "PAYMENT_REVIEW", leaseUntil: null, nextRunAt: afterHours(24) }).where(eq(rapGeneration.id, task.id)); return;
@@ -32,6 +34,7 @@ async function runTask(task: RapGeneration) {
     if (!left?.storageKey || !right?.storageKey || [left, right].some(a => a.expiresAt <= new Date())) {
       await failRapGeneration(task.id, "PHOTOS_EXPIRED"); return;
     }
+    try { await assertRapAssetsApproved(assets); } catch { await defer(task, "PHOTO_MODERATION_REQUIRED"); return; }
     // Repeating preparation is safe: it cannot purchase another video.
     const audio = await verifiedRapMusic(task.snapshot);
     const leftUrl = await uploadKieAsset(await getRapObject(left.storageKey), `${randomUUID()}.jpg`, "image/jpeg");
@@ -54,20 +57,22 @@ async function runTask(task: RapGeneration) {
   if (result.state === "success" && result.resultUrl) {
     // Never expose a short-lived provider URL or substitute a concept poster.
     const response = await fetch(safeProviderUrl(result.resultUrl), { redirect: "error", signal: AbortSignal.timeout(60_000), cache: "no-store" });
-    const bytes = await readLimited(response, 150 * 1024 * 1024);
-    if (bytes.length < 16 || !bytes.subarray(0, 100).includes(Buffer.from("ftyp"))) throw new RapError(502, "VIDEO_INVALID");
-    const key = `rap/${task.id}/${task.id}.mp4`; await putRapObject(key, bytes, "video/mp4");
-    await db.transaction(async tx => {
+    const key = `rap/${task.id}/${randomUUID()}.mp4`;
+    const { mediaHash } = await persistRapVideo(response, key);
+    let retained = false;
+    try { await db.transaction(async tx => {
       const [lockedOrder] = await tx.select().from(rapOrder).where(eq(rapOrder.id, task.orderId)).for("update");
       const [current] = await tx.select().from(rapGeneration).where(eq(rapGeneration.id, task.id)).for("update");
-      if (["succeeded", "expired", "failed"].includes(current.status)) return;
+      if (current.leaseUntil?.getTime() !== task.leaseUntil?.getTime() || ["succeeded", "expired", "failed", "moderating", "content_rejected"].includes(current.status)) return;
       if (lockedOrder.status !== "paid") {
         await tx.update(rapGeneration).set({ status: "requires_review", error: "LATE_RESULT_PAYMENT_REVIEW", leaseUntil: null, nextRunAt: afterHours(24) }).where(eq(rapGeneration.id, task.id)); return;
       }
-      await tx.update(rapGeneration).set({ status: "succeeded", resultKey: key, resultExpiresAt: afterHours(24 * RAP_PRODUCT.videoDays),
-        finishedAt: new Date(), providerCredits: result.creditsConsumed == null ? null : String(result.creditsConsumed), error: null, leaseUntil: null, updatedAt: new Date() }).where(eq(rapGeneration.id, task.id));
-      await tx.insert(rapAudit).values({ id: `result:${task.id}`, orderId: task.orderId, generationId: task.id, kind: "video_ready" }).onConflictDoNothing();
-    });
+      await tx.update(rapGeneration).set({ status: "moderating", resultKey: key, mediaHash, persistedAt: new Date(),
+        providerCredits: result.creditsConsumed == null ? null : String(result.creditsConsumed), error: null, leaseUntil: null,
+        updatedAt: new Date() }).where(eq(rapGeneration.id, task.id));
+      await queueRapModeration(tx, { userId: task.userId, generationId: task.id, mediaHash, storageKey: key });
+      retained = true;
+    }); } finally { if (!retained) await deleteRapObject(key); }
     return;
   }
   const needsReview = Date.now() - (task.submittedAt || task.createdAt).getTime() > RAP_PRODUCT.reviewMinutes * 60_000;
@@ -77,7 +82,7 @@ async function runTask(task: RapGeneration) {
 }
 
 export async function processRapJobs(limit = 5) {
-  if (!rapGenerationEnabled()) return { processed: 0, generationDisabled: true };
+  if (!rapGenerationEnabled() || process.env.RAP_MODERATION_ENABLED !== "true" || !process.env.SEEAPI_API_KEY) return { processed: 0, generationDisabled: true };
   let processed = 0;
   for (let i = 0; i < Math.min(limit, 10); i++) {
     const task = await db.transaction(async tx => {
@@ -116,6 +121,9 @@ export async function sendRapNotifications() {
     .where(and(eq(rapGeneration.status, "succeeded"), isNull(rapGeneration.emailSentAt), gt(rapGeneration.resultExpiresAt, new Date()),
       or(isNull(rapGeneration.emailAttemptedAt), lt(rapGeneration.emailAttemptedAt, new Date(Date.now() - 15 * 60_000))))).limit(10);
   for (const { task, email } of tasks) {
+    try { await assertRapVideoApproved(task); } catch { continue; }
+    const [order] = await db.select().from(rapOrder).where(eq(rapOrder.id, task.orderId));
+    if (order?.status !== "paid") continue;
     const claim = await db.update(rapGeneration).set({ emailAttemptedAt: new Date() }).where(and(eq(rapGeneration.id, task.id),
       or(isNull(rapGeneration.emailAttemptedAt), lt(rapGeneration.emailAttemptedAt, new Date(Date.now() - 15 * 60_000))))).returning();
     if (!claim.length) continue;
@@ -139,13 +147,13 @@ export async function sendRapNotifications() {
 export async function cleanupRapMedia() {
   await db.delete(rapMetric).where(lt(rapMetric.createdAt, afterHours(-24 * 30)));
   // Apply the terminal deadline only once; repeated cron runs must not extend it.
-  const ended = await db.select().from(rapGeneration).where(and(isNotNull(rapGeneration.finishedAt), inArray(rapGeneration.status, ["succeeded", "failed", "expired"])));
+  const ended = await db.select().from(rapGeneration).where(and(isNotNull(rapGeneration.finishedAt), inArray(rapGeneration.status, ["succeeded", "failed", "expired", "content_rejected"])));
   for (const task of ended) {
     const deadline = afterHours(RAP_PRODUCT.terminalPhotoHours, task.finishedAt!);
     // Shared assets are not removed while another active task still needs them.
     const active = await db.select().from(rapGeneration).where(and(
       or(inArray(rapGeneration.leftAssetId, [task.leftAssetId, task.rightAssetId]), inArray(rapGeneration.rightAssetId, [task.leftAssetId, task.rightAssetId])),
-      inArray(rapGeneration.status, ["queued", "preparing", "submitting", "submission_unknown", "waiting", "generating", "persisting", "requires_review"]),
+      inArray(rapGeneration.status, ["queued", "preparing", "submitting", "submission_unknown", "waiting", "generating", "persisting", "moderating", "requires_review"]),
     )).limit(1);
     if (!active.length) await db.update(rapAsset).set({ expiresAt: deadline }).where(and(inArray(rapAsset.id, [task.leftAssetId, task.rightAssetId]), gt(rapAsset.expiresAt, deadline)));
   }
@@ -159,5 +167,52 @@ export async function cleanupRapMedia() {
     try { await deleteRapObject(task.resultKey!); await db.update(rapGeneration).set({ resultKey: null, status: "expired" }).where(eq(rapGeneration.id, task.id)); }
     catch { /* Keep for retry. */ }
   }
+  // Isolated media has its own deadline; no approved expiry is needed to clean it.
+  const isolated = await db.select().from(rapGeneration).where(and(isNotNull(rapGeneration.resultKey),
+    isNull(rapGeneration.moderatedAt), or(lt(rapGeneration.persistedAt, afterHours(-24 * 7)),
+      and(eq(rapGeneration.status, "content_rejected"), lt(rapGeneration.finishedAt, afterHours(-24)))))).limit(20);
+  for (const task of isolated) {
+    await db.transaction(async tx => {
+      await tx.select().from(rapOrder).where(eq(rapOrder.id, task.orderId)).for("update");
+      const [current] = await tx.select().from(rapGeneration).where(eq(rapGeneration.id, task.id)).for("update");
+      if (!current?.resultKey || current.moderatedAt) return;
+      await deleteRapObject(current.resultKey);
+      await tx.update(rapGeneration).set({ resultKey: null, status: "expired", finishedAt: new Date() }).where(eq(rapGeneration.id, task.id));
+      await tx.update(rapModeration).set({ status: "error", reason: "MEDIA_EXPIRED", leaseUntil: null }).where(eq(rapModeration.generationId, task.id));
+    });
+  }
+  const uploads = await db.select().from(rapUpload).where(lte(rapUpload.expiresAt, new Date())).limit(30);
+  for (const upload of uploads) {
+    try { await deleteRapObject(upload.storageKey); await db.delete(rapUpload).where(eq(rapUpload.id, upload.id)); } catch { /* retry next cron */ }
+  }
   return { photos: expired.length, videos: videos.length };
+}
+
+// Queue still-valid legacy media in bounded batches.
+// Reading bytes does not submit a generation or grant any payment rights.
+export async function queueExistingRapMedia() {
+  if (process.env.RAP_MODERATION_ENABLED !== "true") return;
+  const photos = await db.select().from(rapAsset).where(and(isNotNull(rapAsset.storageKey), isNull(rapAsset.mediaHash), gt(rapAsset.expiresAt, new Date()))).limit(5);
+  for (const asset of photos) {
+    const hash = asset.mediaHash || createHash("sha256").update(await getRapObject(asset.storageKey!)).digest("hex");
+    await db.transaction(async tx => {
+      const [current] = await tx.select().from(rapAsset).where(eq(rapAsset.id, asset.id)).for("update");
+      if (!current.storageKey || current.expiresAt <= new Date()) return;
+      if (!current.mediaHash) await tx.update(rapAsset).set({ mediaHash: hash }).where(eq(rapAsset.id, current.id));
+      await queueRapModeration(tx, { userId: current.userId, assetId: current.id, mediaHash: hash, storageKey: current.storageKey });
+    });
+  }
+  const videos = await db.select().from(rapGeneration).where(and(eq(rapGeneration.status, "succeeded"),
+    isNull(rapGeneration.moderatedAt), isNotNull(rapGeneration.resultKey), gt(rapGeneration.resultExpiresAt, new Date()))).limit(2);
+  for (const task of videos) {
+    const hash = createHash("sha256").update(await getRapObject(task.resultKey!)).digest("hex");
+    await db.transaction(async tx => {
+      await tx.select().from(rapOrder).where(eq(rapOrder.id, task.orderId)).for("update");
+      const [current] = await tx.select().from(rapGeneration).where(eq(rapGeneration.id, task.id)).for("update");
+      if (current.status !== "succeeded" || current.moderatedAt || !current.resultKey) return;
+      await tx.update(rapGeneration).set({ mediaHash: hash, status: "moderating", persistedAt: new Date(), resultExpiresAt: null }).where(eq(rapGeneration.id, current.id));
+      await queueRapModeration(tx, { userId: current.userId, generationId: current.id, mediaHash: hash, storageKey: current.resultKey });
+    });
+  }
+
 }

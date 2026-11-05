@@ -1,17 +1,18 @@
 import "server-only";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import sharp from "sharp";
 import { and, eq, gt, inArray, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { rapAsset, rapOrder, rapGeneration, rapAudit, payment } from "@/lib/db/schema";
 import { RAP_PRODUCT, RapError } from "./config";
-import { putRapObject } from "./storage";
+import { assertRapAssetsApproved, queueRapModeration } from "./moderation";
+import { putRapObject, deleteRapObject } from "./storage";
 import { validatePayPalCapture } from "@/lib/payments/paypal-validation";
 import type { PayPalOrder, PayPalCapture } from "@/lib/payments/paypal";
 
 export type RapOrder = typeof rapOrder.$inferSelect;
 export type RapGeneration = typeof rapGeneration.$inferSelect;
-export const activeStatuses = ["queued", "preparing", "submitting", "submission_unknown", "waiting", "generating", "persisting", "requires_review"];
+export const activeStatuses = ["queued", "preparing", "submitting", "submission_unknown", "waiting", "generating", "persisting", "moderating", "requires_review"];
 export const afterHours = (hours: number, now = new Date()) => new Date(now.getTime() + hours * 3600_000);
 
 export async function normalizePortrait(bytes: Buffer) {
@@ -31,15 +32,23 @@ export async function savePortrait(userId: string, bytes: Buffer) {
   const normalized = await normalizePortrait(bytes); const id = randomUUID();
   const key = `rap/${randomUUID()}/${id}.jpg`;
   await putRapObject(key, normalized.data, "image/jpeg");
-  const [asset] = await db.insert(rapAsset).values({ id, userId, storageKey: key,
-    width: normalized.width, height: normalized.height, expiresAt: afterHours(RAP_PRODUCT.draftHours) }).returning();
-  return { assetId: asset.id, width: asset.width, height: asset.height, expiresAt: asset.expiresAt };
+  const mediaHash = createHash("sha256").update(normalized.data).digest("hex");
+  try {
+    const asset = await db.transaction(async tx => {
+      const [saved] = await tx.insert(rapAsset).values({ id, userId, storageKey: key, mediaHash,
+        width: normalized.width, height: normalized.height, expiresAt: afterHours(RAP_PRODUCT.draftHours) }).returning();
+      await queueRapModeration(tx, { userId, assetId: id, mediaHash, storageKey: key });
+      return saved;
+    });
+    return { assetId: asset.id, width: asset.width, height: asset.height, expiresAt: asset.expiresAt, moderationStatus: "pending" };
+  } catch (error) { await deleteRapObject(key).catch(() => {}); throw error; }
 }
 
 export async function assertAssets(userId: string, left: string, right: string, executor = db) {
   const ids = [...new Set([left, right])];
   const assets = await executor.select().from(rapAsset).where(and(eq(rapAsset.userId, userId), inArray(rapAsset.id, ids), gt(rapAsset.expiresAt, new Date())));
   if (assets.length !== ids.length || assets.some(a => !a.storageKey)) throw new RapError(409, "PHOTOS_EXPIRED");
+  await assertRapAssetsApproved(assets, executor);
   return assets;
 }
 export async function ownedOrder(id: string, userId: string) {
@@ -98,7 +107,7 @@ export async function failRapGeneration(id: string, code: string) {
   await db.transaction(async tx => {
     const [order] = await tx.select().from(rapOrder).where(eq(rapOrder.id, found.orderId)).for("update");
     const [task] = await tx.select().from(rapGeneration).where(eq(rapGeneration.id, id)).for("update");
-    if (!task || ["failed", "succeeded", "expired"].includes(task.status)) return;
+    if (!task || ["failed", "succeeded", "expired", "moderating", "content_rejected"].includes(task.status)) return;
     await tx.update(rapGeneration).set({ status: "failed", error: code, finishedAt: new Date(), leaseUntil: null, updatedAt: new Date() }).where(eq(rapGeneration.id, id));
     if (order.status === "paid") {
       const grant = await tx.insert(rapAudit).values({ id: `failure:${id}`, orderId: order.id, generationId: id, kind: "failure_replacement" }).onConflictDoNothing().returning();

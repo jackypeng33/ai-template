@@ -1,14 +1,11 @@
-import { savePortrait } from "@/lib/rap/repository";
-import { rapAccess, rapErrorResponse, privateJson } from "@/lib/rap/http";
-import { RAP_PRODUCT, RapError } from "@/lib/rap/config";
+import { rapAccess, rapErrorResponse } from "@/lib/rap/http";
+import { RapError } from "@/lib/rap/config";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+// All uploads must pass the shared quota and confirmation flow.
 export async function POST(request: Request) {
   try {
-    const user = await rapAccess(request, true);
-    if (Number(request.headers.get("content-length") || 0) > RAP_PRODUCT.maxImageBytes + 100_000) throw new RapError(413, "PHOTO_SIZE_INVALID");
-    const data = await request.formData(); const file = data.get("file");
-    if (!(file instanceof File) || file.size > RAP_PRODUCT.maxImageBytes) throw new RapError(400, "PHOTO_SIZE_INVALID");
-    return privateJson(await savePortrait(user.id, Buffer.from(await file.arrayBuffer())), 201);
+    await rapAccess(request, true);
+    throw new RapError(410, "USE_DIRECT_UPLOAD");
   } catch (error) { return rapErrorResponse(error); }
 }

@@ -267,6 +267,7 @@ export const rapAsset = pgTable("rap_asset", {
   id: text("id").primaryKey(),
   userId: text("user_id").notNull().references(() => user.id, { onDelete: "cascade" }),
   storageKey: text("storage_key"), width: integer("width").notNull(), height: integer("height").notNull(),
+  mediaHash: text("media_hash"),
   expiresAt: timestamp("expires_at").notNull(), createdAt: timestamp("created_at").defaultNow().notNull(),
 }, t => ({ expiry: index("rap_asset_expiry_idx").on(t.expiresAt) }));
 
@@ -290,6 +291,7 @@ export const rapGeneration = pgTable("rap_generation", {
   rightAssetId: text("right_asset_id").notNull().references(() => rapAsset.id),
   snapshot: text("snapshot").notNull(), status: text("status").default("queued").notNull(),
   providerTaskId: text("provider_task_id").unique(), resultKey: text("result_key"),
+  mediaHash: text("media_hash"), moderatedAt: timestamp("moderated_at"), persistedAt: timestamp("persisted_at"),
   resultExpiresAt: timestamp("result_expires_at"), submittedAt: timestamp("submitted_at"), finishedAt: timestamp("finished_at"),
   nextRunAt: timestamp("next_run_at").defaultNow().notNull(), leaseUntil: timestamp("lease_until"),
   error: text("error"), providerCredits: text("provider_credits"),
@@ -317,3 +319,24 @@ export const rapMetric = pgTable("rap_metric", {
   id: text("id").primaryKey(), sessionId: text("session_id").notNull(), event: text("event").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, t => ({ uniqueEvent: uniqueIndex("rap_metric_session_event_idx").on(t.sessionId, t.event) }));
+
+
+export const rapUpload = pgTable("rap_upload", {
+  id: text("id").primaryKey(), userId: text("user_id").notNull().references(() => user.id, { onDelete: "cascade" }),
+  storageKey: text("storage_key").notNull().unique(), contentType: text("content_type").notNull(), size: integer("size").notNull(),
+  leaseUntil: timestamp("lease_until"),
+  status: text("status").default("pending").notNull(), assetId: text("asset_id").references(() => rapAsset.id),
+  expiresAt: timestamp("expires_at").notNull(), createdAt: timestamp("created_at").defaultNow().notNull(),
+}, t => ({ expiry: index("rap_upload_expiry_idx").on(t.expiresAt), user: index("rap_upload_user_idx").on(t.userId, t.createdAt) }));
+
+export const rapModeration = pgTable("rap_moderation", {
+  id: text("id").primaryKey(), userId: text("user_id").notNull().references(() => user.id, { onDelete: "cascade" }),
+  assetId: text("asset_id").references(() => rapAsset.id), generationId: text("generation_id").references(() => rapGeneration.id),
+  mediaHash: text("media_hash").notNull(), storageKey: text("storage_key").notNull(), policyVersion: text("policy_version").notNull(),
+  status: text("status").default("pending").notNull(), providerTaskId: text("provider_task_id").unique(),
+  requestBody: text("request_body"), idempotencyKey: text("idempotency_key").notNull().unique(), reason: text("reason"),
+  attempts: integer("attempts").default(0).notNull(), nextRunAt: timestamp("next_run_at").defaultNow().notNull(), leaseUntil: timestamp("lease_until"),
+  createdAt: timestamp("created_at").defaultNow().notNull(), updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, t => ({ asset: uniqueIndex("rap_moderation_asset_version_idx").on(t.assetId, t.mediaHash, t.policyVersion),
+  generation: uniqueIndex("rap_moderation_generation_version_idx").on(t.generationId, t.mediaHash, t.policyVersion),
+  work: index("rap_moderation_work_idx").on(t.nextRunAt, t.status) }));
