@@ -6,6 +6,7 @@ import { RAP_PRODUCT, rapCheckoutReady } from "@/lib/rap/config";
 import { createKieTask, queryKieTask, uploadKieAsset, kiePayload } from "@/lib/rap/kie";
 import { checkoutSchema, safeProviderUrl, readLimited, checkRapOrigin } from "@/lib/rap/validation";
 import { normalizePortrait } from "@/lib/rap/repository";
+import { createRapSnapshot, verifiedRapMusic } from "@/lib/rap/snapshot";
 vi.mock("@/lib/db", () => ({ db: {} }));
 
 describe("BOOTH provider boundaries", () => {
@@ -25,10 +26,21 @@ describe("BOOTH provider boundaries", () => {
   });
   it("fixes all purchased generation parameters and avoids arbitrary client prompts", () => {
     expect(kiePayload("left", "right", "audio")).toMatchObject({ model: "bytedance/seedance-2-mini", input: {
-      duration: 8, resolution: "720p", aspect_ratio: "9:16", reference_image_urls: ["left", "right"], reference_audio_urls: ["audio"],
+      duration: 10, resolution: "720p", aspect_ratio: "9:16", reference_image_urls: ["left", "right"], reference_audio_urls: ["audio"],
       generate_audio: true, web_search: false, nsfw_checker: true,
     } });
     expect(RAP_PRODUCT.priceCents).toBe(599);
+  });
+  it("binds the ten-second soundtrack to the new template and rejects old snapshots", async () => {
+    const snapshot = await createRapSnapshot();
+    const saved = JSON.parse(snapshot);
+    expect(saved.duration).toBe(10);
+    expect(saved.prompt).toContain("10 second");
+    const audio = await verifiedRapMusic(snapshot);
+    expect(audio.toString("ascii", 0, 4)).toBe("RIFF");
+    expect(audio.toString("ascii", 36, 40)).toBe("data");
+    expect(audio.readUInt32LE(40) / audio.readUInt32LE(28)).toBe(10);
+    await expect(verifiedRapMusic(JSON.stringify({ ...saved, duration: 8, templateVersion: "orange-booth-en-v1" }))).rejects.toThrow("TEMPLATE_REQUIRES_REVIEW");
   });
   it("binds task identity, distinguishes parse recovery from resubmission", async () => {
     vi.stubEnv("RAP_VIDEO_GENERATION_ENABLED", "true"); vi.stubEnv("KIE_API_KEY", "test");

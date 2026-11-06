@@ -51,7 +51,7 @@ export async function startRapCheckout(userId: string, input: z.infer<typeof che
   if (!order.providerOrderId && Date.now() - order.createdAt.getTime() > 5 * 3600_000) throw new RapError(409, "ORDER_REQUIRES_REVIEW");
   const summary = order.providerOrderId ? null : paypalOrderSchema.pick({ id: true, links: true }).parse(await paypalRequest("/v2/checkout/orders", "POST", {
     intent: "CAPTURE", purchase_units: [{ reference_id: order.id, custom_id: order.id,
-      description: "BOOTH — one 8-second duo rap video", payee: { merchant_id: order.merchantId },
+      description: `BOOTH — one ${JSON.parse(order.snapshot).duration}-second duo rap video`, payee: { merchant_id: order.merchantId },
       amount: { currency_code: "USD", value: (order.amountCents / 100).toFixed(2) } }],
     payment_source: { paypal: { experience_context: { shipping_preference: "NO_SHIPPING", user_action: "PAY_NOW",
       return_url: rapReturnUrl(order.id), cancel_url: rapReturnUrl(order.id, true) } } },

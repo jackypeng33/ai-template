@@ -224,7 +224,7 @@ export function RapLanding({ googleEnabled = false, initialCheckoutAvailable = f
       <section className={s.hero}>
         <div className={s.heroCopy}><div className={s.eyebrow}><span /> YOUR CAMERA ROLL HAS A NEW SIDE HUSTLE</div>
           <h1>TWO PHOTOS.<br />ONE <span>RAP</span><br /><span className={s.outline}>MOMENT.</span><span className={s.star}>✳</span></h1>
-          <p>You. Your best friend. A mic between you.<br />Turn two photos into an 8-second rap moment worth sending to the group chat.</p>
+          <p>You. Your best friend. A mic between you.<br />Turn two photos into a {RAP_PRODUCT.duration}-second rap moment worth sending to the group chat.</p>
           <a className={s.heroCta} href="#create">Put us in the booth <ArrowDown size={17} /></a>
           <div className={s.heroNotes}><span><Check size={13} /> No filming</span><span><Check size={13} /> No singing</span><span><Check size={13} /> Just your photos</span></div>
           <div className={s.miniNote}>THE ORANGE BOOTH · VOL. 01 <span>ONE TRACK. YOUR DUO.</span></div>
@@ -232,7 +232,7 @@ export function RapLanding({ googleEnabled = false, initialCheckoutAvailable = f
         <div className={s.posterArea}><div className={s.posterSticker}>YOUR DUO.<br />MAIN CHARACTER<br />ENERGY. ↗</div>
           <div className={s.poster}><Image src="/rap/booth-concept-v1.webp" alt="Concept art: two people in an orange recording booth with a microphone" fill priority sizes="(max-width: 700px) 85vw, 420px" />
             <div className={s.posterTop}><span><span className={s.recDot} /> BOOTH SESSIONS</span><span>VOL. 001</span></div>
-            <div className={s.posterBottom}><span className={s.conceptLabel}>CONCEPT ART · NOT A GENERATED VIDEO</span><strong>BETTER<br />TOGETHER.</strong><div className={s.posterSpecs}><span>8 SEC</span><span>9:16</span><span>720P</span></div></div>
+            <div className={s.posterBottom}><span className={s.conceptLabel}>CONCEPT ART · NOT A GENERATED VIDEO</span><strong>BETTER<br />TOGETHER.</strong><div className={s.posterSpecs}><span>{RAP_PRODUCT.duration} SEC</span><span>9:16</span><span>720P</span></div></div>
           </div><div className={s.posterCaption}><span>01 / THE ORANGE BOOTH</span><span>← YOUR NEXT GROUP CHAT DROP</span></div>
         </div>
       </section>
@@ -240,7 +240,7 @@ export function RapLanding({ googleEnabled = false, initialCheckoutAvailable = f
       <section id="create" className={s.createSection}>
         <div className={s.sectionIntro}><span className={s.kicker}>01 — MAKE AN ENTRANCE</span><h2>THE BOOTH<br />IS YOURS.</h2><p>One takes the mic. One brings the hype.<br />Pick your people. We handle the performance.</p>
           <div className={s.formatCard}><Mic2 size={24} /><div><strong>The Orange Booth</strong><span>Original beat · Left lead, right hype</span></div><span className={s.selectedBadge}><Check size={14} /> SELECTED</span></div>
-          <div className={s.specRow}><span>8-second video</span><span>Vertical 9:16</span><span>720p MP4</span></div>
+          <div className={s.specRow}><span>{RAP_PRODUCT.duration}-second video</span><span>Vertical 9:16</span><span>720p MP4</span></div>
           <p className={s.honestNote}><CircleHelp size={15} /> AI performances can vary. Faces and lip sync may not be exact. The illustration above is concept art; a verified video sample is coming.</p>
         </div>
         <div className={s.creator}><div className={s.creatorHeading}><strong>BUILD YOUR DUO</strong><span>STEP 1 OF 1</span></div>
@@ -273,14 +273,14 @@ export function RapLanding({ googleEnabled = false, initialCheckoutAvailable = f
         {[['01', 'PICK YOUR DUO.', 'Two clear photos. You take the left, your friend takes the right.'], ['02', 'MAKE IT OFFICIAL.', `Sign in, review your photos and pay ${price} once with PayPal.`], ['03', 'DROP IT IN THE CHAT.', 'We generate your moment. Get an email, download the MP4, make their day.']].map(([num, title, copy]) => <div key={num} className={s.step}><span>{num}</span><h3>{title}</h3><p>{copy}</p></div>)}
       </div></section>
       <section id="the-track" className={s.trackSection}><div className={s.record} aria-hidden="true"><div><Mic2 size={32} /><span>BOOTH<br />ORIGINALS</span></div></div><div className={s.trackCopy}><span className={s.kicker}>03 — THE SOUND OF YOUR DUO</span><h2>ONE BEAT.<br />ALL THE ENERGY.</h2><p>“Two faces, one beat. Step in, feel the heat.<br />Side by side, we shine. Your crew, your time.”</p>
-        <div className={s.player}><button aria-label={playing ? "Pause soundtrack" : "Play soundtrack"} onClick={() => void toggleAudio()}>{playing ? "Ⅱ" : <Play size={17} fill="currentColor" />}</button><div className={`${s.waveform} ${playing ? s.wavePlaying : ""}`} aria-hidden="true">{Array.from({ length: 38 }, (_, i) => <i key={i} style={{ height: `${12 + ((i * 17 + 11) % 27)}px`, animationDelay: `${i * .025}s` }} />)}</div><span>0:08</span></div>
+        <div className={s.player}><button aria-label={playing ? "Pause soundtrack" : "Play soundtrack"} onClick={() => void toggleAudio()}>{playing ? "Ⅱ" : <Play size={17} fill="currentColor" />}</button><div className={`${s.waveform} ${playing ? s.wavePlaying : ""}`} aria-hidden="true">{Array.from({ length: 38 }, (_, i) => <i key={i} style={{ height: `${12 + ((i * 17 + 11) % 27)}px`, animationDelay: `${i * .025}s` }} />)}</div><span>0:{String(RAP_PRODUCT.duration).padStart(2, "0")}</span></div>
         <audio ref={audioRef} src={RAP_PRODUCT.musicPath} preload="none" onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} onEnded={() => setPlaying(false)} />
         <small><Headphones size={13} /> Original demo beat + synthetic reference vocals. Final soundtrack approval pending.</small>
       </div></section>
       <section id="faq" className={s.faqSection}><div><span className={s.kicker}>04 — BEFORE YOU HIT RECORD</span><h2>GOOD<br />QUESTIONS.</h2></div><div className={s.faqList}>
         {[
           ['Do I need to sing or upload music?', 'No. The fixed BOOTH track comes with the template. Upload two photos; the left person leads and the right person brings the hype.'],
-          ['What exactly am I buying?', `One 8-second, vertical 9:16, 720p MP4 for ${price} USD. No subscription, no credit packages. AI faces, motion and lip sync can vary.`],
+          ['What exactly am I buying?', `One ${RAP_PRODUCT.duration}-second, vertical 9:16, 720p MP4 for ${price} USD. No subscription, no credit packages. AI faces, motion and lip sync can vary.`],
           ['How long does it take?', 'Timing depends on the queue and provider. You can leave the page; the job continues and we email you when it is ready. After 30 minutes without a final result, it is flagged for support review rather than automatically resubmitted.'],
           ['What if the video fails or I do not like it?', 'A confirmed technical failure returns one generation opportunity. You can change the photos and manually try again. For an unsatisfactory completed video, use Report a problem on your order to request an individual review. Refunds and extra replacements are reviewed by support.'],
           ['What happens to my photos and video?', 'Photos in our system are deleted within 24 hours of task completion. Unpaid drafts expire after 24 hours; unresolved input photos are retained for at most 7 days. Videos are available for 7 days after completion. Provider retention is separate; see our privacy notice.'],

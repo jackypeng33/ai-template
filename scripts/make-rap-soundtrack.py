@@ -1,4 +1,4 @@
-"""Create an original 8-second beat and mix local synthetic reference vocals.
+"""Create an original 10-second beat and mix local synthetic reference vocals.
 
 No remote API, pretrained music or sampled song. Run the companion PowerShell
 script first to render the four voice lines using Windows Speech. This is a
@@ -14,7 +14,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 SR = 44100
-LENGTH = 8
+LENGTH = 10
 rng = random.Random(2702026)
 beat = [0.0] * (SR * LENGTH)
 vocals = [0.0] * len(beat)
@@ -26,7 +26,7 @@ def add(start, duration, sample, gain=1):
         beat[first + j] += gain * sample(j / SR)
 
 
-for step in range(64):
+for step in range(LENGTH * 8):
     start = step * 0.125
     if step % 8 in (0, 3, 6):
         add(start, 0.24, lambda t: math.sin(2 * math.pi * (48 * t + 7 * (1 - math.exp(-t * 38)))) * math.exp(-t * 19), 0.72)
@@ -35,7 +35,7 @@ for step in range(64):
     if step % 2 == 0:
         add(start, 0.04, lambda t: rng.uniform(-1, 1) * math.exp(-t * 110), 0.22)
 
-for bar, freq in enumerate((55, 65.406, 49, 55)):
+for bar, freq in enumerate((55, 65.406, 49, 55, 55)):
     for offset in (0, 0.75, 1.5):
         add(bar * 2 + offset, 0.42, lambda t, f=freq: (math.sin(2 * math.pi * f * t) + .15 * math.sin(2 * math.pi * f * 2 * t)) * min(1, t * 100) * math.exp(-t * 5), .28)
     for offset, note in ((0.25, freq * 8), (1.0, freq * 6), (1.625, freq * 12)):
@@ -84,6 +84,6 @@ def write(filename, samples):
 target = ROOT / 'public' / 'rap'
 target.mkdir(parents=True, exist_ok=True)
 mixed = [(b * (.62 if abs(v) > .015 else 1) + v) * min(1, (len(beat) - i) / (SR * .08)) for i, (b, v) in enumerate(zip(beat, vocals))]
-write(target / 'booth-original-v1.wav', mixed)
-write(target / 'booth-instrumental-v1.wav', beat)
+write(target / 'booth-original-v2.wav', mixed)
+write(target / 'booth-instrumental-v2.wav', beat)
 print(json.dumps({'durationSeconds': LENGTH, 'sampleRate': SR, 'channels': 1, 'format': 'PCM16 WAV', 'bpm': 120, 'remoteCalls': 0}))

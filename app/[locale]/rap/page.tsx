@@ -7,7 +7,7 @@ import { rapCheckoutReady } from "@/lib/rap/config";
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = {
   title: "BOOTH — Two photos. One rap moment.",
-  description: "Put you and your friend in the booth. Create an 8-second duo rap video from two photos. One video, one payment.",
+  description: "Put you and your friend in the booth. Create a 10-second duo rap video from two photos. One video, one payment.",
   robots: { index: false, follow: false },
 };
 export default async function RapPage({ params }: { params: Promise<{ locale: string }> }) {

@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { RAP_PRODUCT, rapPrompt, RapError } from "./config";
 export async function rapMusic() {
-  return readFile(path.join(process.cwd(), "public", "rap", "booth-original-v1.wav"));
+  return readFile(path.join(process.cwd(), "public", RAP_PRODUCT.musicPath));
 }
 export async function createRapSnapshot() {
   return JSON.stringify({ ...RAP_PRODUCT, prompt: rapPrompt, musicSha256: createHash("sha256").update(await rapMusic()).digest("hex") });
