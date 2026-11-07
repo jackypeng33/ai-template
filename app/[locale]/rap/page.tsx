@@ -6,7 +6,7 @@ import { isPayPalEnabled } from "@/lib/payments/paypal";
 import { rapCheckoutReady } from "@/lib/rap/config";
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = {
-  title: "BOOTH — Two photos. One rap moment.",
+  title: "RapVideoMaker — AI Rap Video Generator",
   description: "Put you and your friend in the booth. Create a 10-second duo rap video from two photos. One video, one payment.",
   robots: { index: false, follow: false },
 };

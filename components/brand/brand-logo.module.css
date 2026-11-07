@@ -1,0 +1,18 @@
+.logo {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  line-height: 0;
+  max-width: 100%;
+}
+
+.logo img {
+  display: block;
+  width: auto;
+  height: var(--rap-logo-height);
+  max-width: 100%;
+}
+
+.sm { --rap-logo-height: 24px; }
+.md { --rap-logo-height: 32px; }
+.lg { --rap-logo-height: 48px; }

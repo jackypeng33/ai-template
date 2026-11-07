@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
+import { BrandLogo } from "@/components/brand/brand-logo";
 import { ArrowDown, ArrowUpRight, Check, ChevronRight, CircleHelp, Download, Headphones, LoaderCircle, Mic2, Play, Plus, RefreshCw, ShieldCheck, Sparkles, Upload, X } from "lucide-react";
 import { signIn, signUp, useSession } from "@/lib/auth-client";
 import { RAP_PRODUCT } from "@/lib/rap/config";
@@ -216,7 +217,7 @@ export function RapLanding({ googleEnabled = false, initialCheckoutAvailable = f
   }
 
   return <div className={s.page}>
-    <header className={s.header}><Link href="/rap" className={s.logo} aria-label="BOOTH home"><span className={s.logoMark}><Mic2 size={18} /></span>BOOTH<span className={s.logoDot}>®</span></Link>
+    <header className={s.header}><Link href="/rap" className={s.brandLink} aria-label="RapVideoMaker home"><BrandLogo size="sm" decorative /></Link>
       <nav aria-label="Main navigation"><a href="#how-it-works">How it works</a><a href="#the-track">The track</a><a href="#faq">FAQs</a></nav>
       <button className={s.accountButton} onClick={() => { if (signedIn) { setShowOrders(v => !v); void loadOrders(); } else setAuthOpen(true); }}>{signedIn ? "My videos" : "Sign in"}<ArrowUpRight size={14} /></button>
     </header>
@@ -290,7 +291,7 @@ export function RapLanding({ googleEnabled = false, initialCheckoutAvailable = f
       </div></section>
       <section className={s.lastCall}><span>THE GROUP CHAT IS WAITING.</span><a href="#create">YOUR TURN.<ArrowUpRight /></a></section>
     </main>
-    <footer className={s.footer}><Link href="/rap" className={s.logo}>BOOTH<span className={s.logoDot}>®</span></Link><span>Two faces. One beat. A moment that’s yours.</span><div><Link href="/rap/policy#terms">Terms</Link><Link href="/rap/policy#privacy">Privacy</Link><Link href="/rap/policy#refunds">Refunds</Link>{support ? <a href={`mailto:${support}`}>Contact</a> : <Link href="/rap/policy#support">Support</Link>}</div></footer>
+    <footer className={s.footer}><Link href="/rap" className={s.brandLink} aria-label="RapVideoMaker home"><BrandLogo size="sm" decorative /></Link><span>Two faces. One beat. A moment that’s yours.</span><div><Link href="/rap/policy#terms">Terms</Link><Link href="/rap/policy#privacy">Privacy</Link><Link href="/rap/policy#refunds">Refunds</Link>{support ? <a href={`mailto:${support}`}>Contact</a> : <Link href="/rap/policy#support">Support</Link>}</div></footer>
     <dialog ref={authDialog} className={s.dialog} onCancel={() => setAuthOpen(false)} onClose={() => setAuthOpen(false)}><button className={s.close} aria-label="Close sign in" onClick={() => setAuthOpen(false)}><X size={20} /></button><span className={s.kicker}>KEEP YOUR DUO TOGETHER</span><h2>{signup ? "JOIN THE BOOTH." : "WELCOME BACK."}</h2><p>Your photos stay here. Signing in does not charge you or start generation.</p>
       <form onSubmit={e => void authSubmit(e)}>{signup && <label>Your name<input name="name" required maxLength={100} autoComplete="name" /></label>}<label>Email<input name="email" type="email" required autoComplete="email" /></label><label>Password<input name="password" type="password" required minLength={8} autoComplete={signup ? "new-password" : "current-password"} /></label><button className={s.payButton} disabled={authBusy}>{authBusy ? "Please wait…" : signup ? "Create account" : "Sign in"}<ArrowUpRight size={17} /></button></form>
       {googleEnabled && <button className={s.google} onClick={async () => { setAuthBusy(true); try { if (draft) await persist(draft); await signIn.social({ provider: "google", callbackURL: "/rap" }); } catch { setError("Google sign in could not start."); } finally { setAuthBusy(false); } }}>Continue with Google</button>}

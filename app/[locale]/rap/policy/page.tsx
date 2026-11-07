@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import s from "@/features/rap/rap.module.css";
-export const metadata = { title: "BOOTH — Terms, privacy & refunds", robots: { index: false, follow: false } };
+export const metadata = { title: "RapVideoMaker — Terms, privacy & refunds", robots: { index: false, follow: false } };
 export default async function RapPolicy({ params }: { params: Promise<{ locale: string }> }) {
   if ((await params).locale !== "en") redirect("/rap/policy");
   const email = process.env.RAP_SUPPORT_EMAIL;
