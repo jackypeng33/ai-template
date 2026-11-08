@@ -25,7 +25,7 @@ export function RapManager() {
       await refresh();
     } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
   }
-  return <main className="mx-auto max-w-5xl space-y-7 p-6"><Link href="/rap" className="underline">← BOOTH</Link><h1 className="text-3xl font-bold">BOOTH operations</h1>
+  return <main className="mx-auto max-w-5xl space-y-7 p-6"><Link href="/" className="underline">← BOOTH</Link><h1 className="text-3xl font-bold">BOOTH operations</h1>
     <p>Latest 100 orders / 200 tasks. Reconcile refund/reversal notifications before resuming an order. Verify unknown submissions in the provider dashboard; never resubmit them blindly.</p>
     {error && <p role="alert" className="rounded border border-red-500 p-3">{error}</p>}<button className="rounded border px-4 py-2" onClick={() => void refresh().catch(e => setError(e.message))}>Refresh</button>
     <section><h2 className="text-xl font-semibold">Recorded events</h2><ul>{data?.counts.map(c => <li key={c.kind}>{c.kind}: {c.count}</li>)}</ul></section>

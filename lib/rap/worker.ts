@@ -127,7 +127,8 @@ export async function sendRapNotifications() {
     const claim = await db.update(rapGeneration).set({ emailAttemptedAt: new Date() }).where(and(eq(rapGeneration.id, task.id),
       or(isNull(rapGeneration.emailAttemptedAt), lt(rapGeneration.emailAttemptedAt, new Date(Date.now() - 15 * 60_000))))).returning();
     if (!claim.length) continue;
-    const link = new URL(`/rap?order=${task.orderId}`, process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000").toString();
+    const link = new URL("/", process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000");
+    link.searchParams.set("order", task.orderId);
     const result = await sendEmail({ to: email, subject: "Your BOOTH video is ready", text:
       `Your duo is ready. Sign in to watch and download: ${link}\nDownload before ${task.resultExpiresAt!.toISOString()}. Your video is kept for 7 days. Reply to support if you need help.` });
     if (result.success && !("data" in result && result.data?.error)) await db.update(rapGeneration).set({ emailSentAt: new Date() }).where(eq(rapGeneration.id, task.id));

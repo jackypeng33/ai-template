@@ -6,11 +6,13 @@
 
 本文 Mermaid 图可在支持 Mermaid 的 Markdown 预览中查看；下方表格和说明保留相同的执行含义。
 
+入口更新（2026-11-08）：视频首页为 `/`；旧 `/rap?order=...` 跳转 `/?order=...`。原模板首页保留在 `/starter`、`/zh/starter`；登录完成、支付返回与结果邮件统一回到视频首页。OAuth 回调、支付 Webhook、API 与私有存储执行逻辑不变。
+
 ## 1. 系统如何连接
 
 ```mermaid
 flowchart LR
-    U[用户浏览器 /rap] --> AUTH[Better Auth 登录与会话]
+    U[用户浏览器 /] --> AUTH[Better Auth 登录与会话]
     U --> API[Next.js Rap API]
     U -->|签名 PUT 上传原图| R2[(私有 R2)]
     API -->|Drizzle / postgres.js| DB[(PostgreSQL / Neon)]

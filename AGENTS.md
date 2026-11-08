@@ -3,7 +3,7 @@
 ## BOOTH Rap MVP
 
 - Scope: `docs/RAPVIDEO-MVP-SPEC.md`; operations: `docs/RAPVIDEO-MVP-IMPLEMENTATION.md`.
-- Independent English-only `/rap`, `/rap/policy`, admin-only `/rap/manage`; core code in `features/rap`, `lib/rap`, `app/api/rap` and `app/api/cron/rap-video`.
+- English-only video home `/` (legacy `/rap` redirects with query parameters), `/rap/policy`, admin-only `/rap/manage`; original home preserved at `/starter` and `/zh/starter`; core code in `features/rap`, `lib/rap`, `app/api/rap` and `app/api/cron/rap-video`.
 - Dedicated `rap_*` tables. Video purchases do not change general credits. Keep payment/initial job atomic, order locks before task locks, and idempotent failure replacement/retry records.
 - User explicitly requested no video API calls. Keep generation, checkout, quality and music-rights flags OFF. A KIE key is not authorization to generate.
 - `/api/rap/paypal/webhook` uses its own `RAP_PAYPAL_WEBHOOK_ID`. Never mix Webhook IDs across registered URLs.
@@ -148,7 +148,7 @@ The important groups are:
 - If you change signup behavior, preserve the registration bonus flow unless the product decision explicitly changes it.
 - Google OAuth is optional now. It is enabled only when both `AUTH_GOOGLE_ID` and `AUTH_GOOGLE_SECRET` are present.
 - GitHub OAuth is optional and requires both `AUTH_GITHUB_ID` and `AUTH_GITHUB_SECRET`.
-- Login/signup forms and the `/rap` dialog must hide each disabled provider independently.
+- Login/signup forms and the video home dialog must hide each disabled provider independently.
 
 ### 2. Credits and ledger integrity
 

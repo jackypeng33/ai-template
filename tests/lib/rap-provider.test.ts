@@ -7,12 +7,24 @@ import { createKieTask, queryKieTask, uploadKieAsset, kiePayload } from "@/lib/r
 import { checkoutSchema, safeProviderUrl, readLimited, checkRapOrigin } from "@/lib/rap/validation";
 import { normalizePortrait } from "@/lib/rap/repository";
 import { createRapSnapshot, verifiedRapMusic } from "@/lib/rap/snapshot";
+import { rapReturnUrl } from "@/lib/rap/payments";
 vi.mock("@/lib/db", () => ({ db: {} }));
 
 describe("BOOTH provider boundaries", () => {
   const fetchMock = vi.fn();
   beforeEach(() => { vi.stubGlobal("fetch", fetchMock); vi.stubEnv("RAP_VIDEO_GENERATION_ENABLED", "false"); });
   afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); fetchMock.mockReset(); });
+  it("returns PayPal approvals and cancellations to the new home without making payment requests", () => {
+    for (const [key, value] of Object.entries({ PAYPAL_ENABLED: "true", PAYPAL_ENV: "sandbox", PAYPAL_CLIENT_ID: "test-client", PAYPAL_CLIENT_SECRET: "test-secret", PAYPAL_MERCHANT_ID: "test-merchant", PAYPAL_WEBHOOK_ID: "test-webhook", NEXT_PUBLIC_APP_URL: "https://booth.example.com" })) vi.stubEnv(key, value);
+    const paid = new URL(rapReturnUrl("rap_test&other=value"));
+    expect(paid.pathname).toBe("/");
+    expect(paid.searchParams.get("order")).toBe("rap_test&other=value");
+    expect(paid.searchParams.has("other")).toBe(false);
+    const cancelled = new URL(rapReturnUrl("rap_test", true));
+    expect(cancelled.pathname).toBe("/");
+    expect(cancelled.searchParams.get("cancelled")).toBe("1");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
   it("never contacts KIE while generation is disabled, even with a key", async () => {
     vi.stubEnv("KIE_API_KEY", "not-a-real-key");
     await expect(createKieTask("left", "right", "audio")).rejects.toThrow("GENERATION_DISABLED");

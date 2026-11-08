@@ -29,7 +29,7 @@ export default function BrandPreview() {
 
     <section className={styles.section}><h2>At favicon sizes</h2><div className={styles.favicons}>{([16, 32, 64] as const).map(size => <div key={size}><span className={styles.faviconFrame}><Image src={size === 16 ? "/brand/icon.svg" : "/brand/logo-symbol.svg"} width={size} height={size} alt="" unoptimized /></span><small>{size} × {size}</small></div>)}</div></section>
 
-    <section className={styles.section}><h2>Header context</h2><div className={styles.header}><Link href="/rap" aria-label="RapVideoMaker home"><BrandLogo size="sm" decorative /></Link><nav><span>How it works</span><span>The track</span><span>FAQs</span></nav><span className={styles.signIn}>Sign in ↗</span></div></section>
+    <section className={styles.section}><h2>Header context</h2><div className={styles.header}><Link href="/" aria-label="RapVideoMaker home"><BrandLogo size="sm" decorative /></Link><nav><span>How it works</span><span>The track</span><span>FAQs</span></nav><span className={styles.signIn}>Sign in ↗</span></div></section>
 
     <section className={styles.section}><h2>Color tokens</h2><div className={styles.swatches}>{swatches.map(([name, color]) => <div key={name}><span className={styles.swatch} style={{ backgroundColor: color }} /><strong>{name}</strong><small>{color}</small></div>)}</div></section>
   </main>;

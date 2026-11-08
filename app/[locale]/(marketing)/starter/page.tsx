@@ -24,12 +24,26 @@ export async function generateMetadata(
 
   const t = await getTranslations({ locale, namespace: 'hero' });
 
-  return generatePageMetadata({
+  const metadata = generatePageMetadata({
     locale,
-    path: '',
+    path: '/starter',
     title: t('title'),
     description: t('description'),
   });
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+  const canonical = new URL(locale === 'en' ? '/starter' : '/zh/starter', baseUrl).toString();
+  return {
+    ...metadata,
+    alternates: {
+      canonical,
+      languages: {
+        'en-US': new URL('/starter', baseUrl).toString(),
+        'zh-CN': new URL('/zh/starter', baseUrl).toString(),
+        'x-default': new URL('/starter', baseUrl).toString(),
+      },
+    },
+    openGraph: { ...metadata.openGraph, url: canonical },
+  };
 }
 
 export default function Home() {

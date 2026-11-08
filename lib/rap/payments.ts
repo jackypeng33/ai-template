@@ -20,7 +20,7 @@ export function rapReturnUrl(id: string, cancelled = false) {
   const config = getPayPalConfig();
   const app = new URL(process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000");
   if (!["http:", "https:"].includes(app.protocol) || (config.environment === "live" && app.protocol !== "https:")) throw new RapError(503, "APP_URL_INVALID");
-  const url = new URL("/rap", app.origin); url.searchParams.set("order", id);
+  const url = new URL("/", app.origin); url.searchParams.set("order", id);
   if (cancelled) url.searchParams.set("cancelled", "1"); return url.toString();
 }
 async function bind(order: RapOrder, remote: Awaited<ReturnType<typeof getPayPalOrder>>) {

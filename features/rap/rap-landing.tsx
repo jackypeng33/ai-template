@@ -200,7 +200,7 @@ export function RapLanding({ googleEnabled = false, githubEnabled = false, initi
       // OAuth leaves this page; unlike in-tab email login, saving cannot be
       // best-effort or the selected photos would be lost on return.
       if (draft) await writeRapDraft(draft);
-      const result = await signIn.social({ provider, callbackURL: "/rap" });
+      const result = await signIn.social({ provider, callbackURL: "/" });
       if (result?.error) throw new Error("OAuth could not start");
     } catch { setError(`${provider === "github" ? "GitHub" : "Google"} sign in could not start.`); }
     finally { setAuthBusy(false); }
@@ -228,7 +228,7 @@ export function RapLanding({ googleEnabled = false, githubEnabled = false, initi
   }
 
   return <div className={s.page}>
-    <header className={s.header}><Link href="/rap" className={s.brandLink} aria-label="RapVideoMaker home"><BrandLogo size="sm" decorative /></Link>
+    <header className={s.header}><Link href="/" className={s.brandLink} aria-label="RapVideoMaker home"><BrandLogo size="sm" decorative /></Link>
       <nav aria-label="Main navigation"><a href="#how-it-works">How it works</a><a href="#the-track">The track</a><a href="#faq">FAQs</a></nav>
       <button className={s.accountButton} onClick={() => { if (signedIn) { setShowOrders(v => !v); void loadOrders(); } else setAuthOpen(true); }}>{signedIn ? "My videos" : "Sign in"}<ArrowUpRight size={14} /></button>
     </header>
@@ -302,7 +302,7 @@ export function RapLanding({ googleEnabled = false, githubEnabled = false, initi
       </div></section>
       <section className={s.lastCall}><span>THE GROUP CHAT IS WAITING.</span><a href="#create">YOUR TURN.<ArrowUpRight /></a></section>
     </main>
-    <footer className={s.footer}><Link href="/rap" className={s.brandLink} aria-label="RapVideoMaker home"><BrandLogo size="sm" decorative /></Link><span>Two faces. One beat. A moment that’s yours.</span><div><Link href="/rap/policy#terms">Terms</Link><Link href="/rap/policy#privacy">Privacy</Link><Link href="/rap/policy#refunds">Refunds</Link>{support ? <a href={`mailto:${support}`}>Contact</a> : <Link href="/rap/policy#support">Support</Link>}</div></footer>
+    <footer className={s.footer}><Link href="/" className={s.brandLink} aria-label="RapVideoMaker home"><BrandLogo size="sm" decorative /></Link><span>Two faces. One beat. A moment that’s yours.</span><div><Link href="/rap/policy#terms">Terms</Link><Link href="/rap/policy#privacy">Privacy</Link><Link href="/rap/policy#refunds">Refunds</Link>{support ? <a href={`mailto:${support}`}>Contact</a> : <Link href="/rap/policy#support">Support</Link>}</div></footer>
     <dialog ref={authDialog} className={s.dialog} onCancel={() => setAuthOpen(false)} onClose={() => setAuthOpen(false)}><button className={s.close} aria-label="Close sign in" onClick={() => setAuthOpen(false)}><X size={20} /></button><span className={s.kicker}>KEEP YOUR DUO TOGETHER</span><h2>{signup ? "JOIN THE BOOTH." : "WELCOME BACK."}</h2><p>Your photos stay here. Signing in does not charge you or start generation.</p>
       <form onSubmit={e => void authSubmit(e)}>{signup && <label>Your name<input name="name" required maxLength={100} autoComplete="name" /></label>}<label>Email<input name="email" type="email" required autoComplete="email" /></label><label>Password<input name="password" type="password" required minLength={8} autoComplete={signup ? "new-password" : "current-password"} /></label><button className={s.payButton} disabled={authBusy}>{authBusy ? "Please wait…" : signup ? "Create account" : "Sign in"}<ArrowUpRight size={17} /></button></form>
       {googleEnabled && <button type="button" className={s.google} disabled={authBusy} onClick={() => void socialSignIn("google")}>Continue with Google</button>}

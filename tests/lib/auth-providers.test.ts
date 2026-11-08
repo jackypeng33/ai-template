@@ -33,7 +33,7 @@ async function githubLogin(auth: typeof import("@/lib/auth").auth, email: string
   }));
   const start = await auth.handler(new Request("http://localhost:3000/api/auth/sign-in/social", {
     method: "POST", headers: { "content-type": "application/json", origin: "http://localhost:3000" },
-    body: JSON.stringify({ provider: "github", callbackURL: "/rap" }),
+    body: JSON.stringify({ provider: "github", callbackURL: "/" }),
   }));
   expect(start.status).toBe(200);
   const redirect = new URL((await start.json()).url);
@@ -61,11 +61,11 @@ describe("configured authentication flows", () => {
     const { auth } = await import("@/lib/auth");
     const first = await githubLogin(auth, "private@test.invalid");
     expect(first.status).toBe(302);
-    expect(first.headers.get("location")).toMatch(/\/rap$/);
+    expect(first.headers.get("location")).toBe("/");
     expect(credits.grant).toHaveBeenCalledTimes(1);
     expect(credits.grant).toHaveBeenCalledWith(expect.any(String), 300, "registration_bonus");
     const again = await githubLogin(auth, "private@test.invalid");
-    expect(again.headers.get("location")).toMatch(/\/rap$/);
+    expect(again.headers.get("location")).toBe("/");
     expect(credits.grant).toHaveBeenCalledTimes(1);
   });
 
@@ -76,7 +76,7 @@ describe("configured authentication flows", () => {
     await auth.api.signInEmail({ body });
     expect(credits.grant).toHaveBeenCalledTimes(1);
     const linked = await githubLogin(auth, body.email);
-    expect(linked.headers.get("location")).toMatch(/\/rap$/);
+    expect(linked.headers.get("location")).toBe("/");
     expect(credits.grant).toHaveBeenCalledTimes(1);
   });
 
@@ -92,7 +92,7 @@ describe("configured authentication flows", () => {
     await auth.api.signUpEmail({ body: { email: "existing@test.invalid", password: "a-secure-test-password", name: "Existing" } });
     const response = await githubLogin(auth, "existing@test.invalid", { verified: false });
     expect(response.headers.get("location")).toContain("error=");
-    expect(response.headers.get("location")).not.toMatch(/\/rap$/);
+    expect(response.headers.get("location")).not.toBe("/");
     expect(credits.grant).toHaveBeenCalledTimes(1);
   });
 

@@ -6,13 +6,15 @@
 
 ## 交付范围
 
-- `/rap`：英语手机优先独立落地页、两张照片与角色预览、样例照片、10 秒音乐试听、登录/注册、按次购买、我的视频、补发与反馈入口。
+- `/`：英语手机优先独立落地页、两张照片与角色预览、样例照片、10 秒音乐试听、登录/注册、按次购买、我的视频、补发与反馈入口。
 - `/rap/policy`：本产品条款、隐私及退款规则；正式经营主体等上线信息仍需补齐。
 - `/rap/manage`：仅管理员查看订单、异常任务、漏斗计数及客服请求，记录人工补发或已在 PayPal 完成的退款。
 - 10 秒/720p/9:16，左主唱右配合，固定模板与音轨，单次 $5.99 USD。
 - 复用 Better Auth、PayPal REST/验签、Resend、S3 SDK、Drizzle；视频购买不变更通用积分余额。
 
 ## 本地运行
+
+2026-11-08：视频页面改为首页 `/`；原模板首页代码移至 `app/[locale]/(marketing)/starter/page.tsx`，通过 `/starter`、`/zh/starter` 访问。`/rap`、`/en/rap`、`/zh/rap` 以及本地化首页 `/en`、`/zh` 永久跳转 `/`，保留订单、取消标记等全部查询参数。`/rap/policy`、`/rap/manage`、API 和 `public/rap` 素材路径保留。视频首页使用独立 `(video)` 布局，沿用 Rap 品牌 metadata 和预览期 noindex；sitemap 仅列可收录的模板页面。登录完成、PayPal 回跳及结果邮件改为首页地址，OAuth 回调和支付 Webhook URL 不变。
 
 2026-11-06：产品统一为 10 秒，模板版本升级为 `orange-booth-en-v2`，采用新的 10 秒 v2 参考音轨；原 v1 音轨保留。旧订单快照不改写，旧模板任务通过现有 `TEMPLATE_REQUIRES_REVIEW` 保护转人工核查，不静默切换规格。售价仍为 $5.99 USD，10 秒实际成本和质量尚待验证。本次不启用任何业务开关。
 
@@ -24,7 +26,7 @@ pnpm db:migrate
 pnpm dev:webpack
 ```
 
-访问 `http://localhost:3000/rap`。数据库迁移会修改目标数据库，务必核对自己的 `DATABASE_URL`。本次代理仅在独立本地测试库运行迁移，不迁移你的业务库。
+访问 `http://localhost:3000/`。数据库迁移会修改目标数据库，务必核对自己的 `DATABASE_URL`。本次代理仅在独立本地测试库运行迁移，不迁移你的业务库。
 
 新增 `0012_rap_video_mvp.sql`、`0013_rap_funnel.sql` 及 Drizzle 快照。客户照片保存在私有存储；开发时可降级 `.data/rap-private`，生产必须使用 `RAP_STORAGE_BUCKET` 私有桶及现有 `STORAGE_*` 凭证。客户文件不进入 `public/`；其中样例照片是用户提供素材的明确副本。
 

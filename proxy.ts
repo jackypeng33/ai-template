@@ -8,8 +8,8 @@ const localizedSite = createMiddleware({
   localePrefix
 });
 
-// BOOTH's confirmed MVP is English-only. Ignore browser locale and the
-// starter's NEXT_LOCALE cookie here, without changing other product routes.
+// The video home and Rap subpages are English-only. The preserved starter
+// and other template pages retain the site's regular locale detection.
 const englishProduct = createMiddleware({
   locales: ['en'], defaultLocale: 'en', localePrefix: 'as-needed',
   localeDetection: false, localeCookie: false, alternateLinks: false,
@@ -17,12 +17,17 @@ const englishProduct = createMiddleware({
 
 export function proxy(request: NextRequest) {
   const path = request.nextUrl.pathname;
+  if (/^\/(?:en|zh)\/?$/.test(path) || /^\/(?:(?:en|zh)\/)?rap\/?$/.test(path)) {
+    const canonical = request.nextUrl.clone();
+    canonical.pathname = '/';
+    return NextResponse.redirect(canonical, 308);
+  }
   if (/^\/(?:en|zh)\/rap(?:\/|$)/.test(path)) {
     const canonical = request.nextUrl.clone();
     canonical.pathname = path.replace(/^\/(?:en|zh)/, '');
     return NextResponse.redirect(canonical);
   }
-  return /^\/rap(?:\/|$)/.test(path) ? englishProduct(request) : localizedSite(request);
+  return path === '/' || /^\/rap(?:\/|$)/.test(path) ? englishProduct(request) : localizedSite(request);
 }
 
 export const config = {

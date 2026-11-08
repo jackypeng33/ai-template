@@ -66,7 +66,7 @@ url: process.env.DATABASE_URL_UNPOOLED || process.env.DATABASE_URL!,
 2. 本地运行 `pnpm install`，确认当前仓库的迁移文件完整。
 3. 按第 3 节通过 direct 地址运行 `pnpm db:migrate`。
 4. 回到 pooled `DATABASE_URL` 启动 `pnpm dev:webpack`。
-5. 打开 `/rap`，注册或登录；新库不会自动拥有旧库用户。
+5. 打开 `/`，注册或登录；新库不会自动拥有旧库用户。
 6. 如需管理员，先创建该账号，再在正确环境运行：
 
 ```zsh

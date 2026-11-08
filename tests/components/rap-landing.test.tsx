@@ -22,9 +22,9 @@ describe("BOOTH customer flow", () => {
     vi.stubGlobal("URL", Object.assign(URL, { createObjectURL: vi.fn(() => "blob:test"), revokeObjectURL: vi.fn() }));
     HTMLDialogElement.prototype.showModal = function () { this.setAttribute("open", ""); };
     HTMLDialogElement.prototype.close = function () { this.removeAttribute("open"); };
-    window.history.replaceState({}, "", "/rap");
+    window.history.replaceState({}, "", "/");
   });
-  it("saves photos before GitHub redirect and returns to Rap without checkout", async () => {
+  it("saves photos before GitHub redirect and returns to the video home without checkout", async () => {
     const file = new File(["photo"], "photo.png", { type: "image/png" });
     draft.read.mockResolvedValue({ left: file, right: file, requestId: crypto.randomUUID(), savedAt: Date.now() });
     render(<RapLanding githubEnabled />);
@@ -37,7 +37,7 @@ describe("BOOTH customer flow", () => {
       return Promise.resolve({ data: { url: "https://github.com/login/oauth/authorize" }, error: null });
     });
     fireEvent.click(button);
-    await waitFor(() => expect(auth.social).toHaveBeenCalledWith({ provider: "github", callbackURL: "/rap" }));
+    await waitFor(() => expect(auth.social).toHaveBeenCalledWith({ provider: "github", callbackURL: "/" }));
     expect(fetchMock.mock.calls.some(([url]) => /generate|assets|\/orders/.test(String(url)))).toBe(false);
   });
 

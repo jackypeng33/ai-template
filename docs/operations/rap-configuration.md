@@ -2,7 +2,9 @@
 
 更新：2026-11-06。按当前仓库 `a0d603d` 的行为编写；文档变更本身不会配置外部服务或授权付费调用。
 
-商品基线：`/rap`，英语界面，双人照片，10 秒 / 720p / 9:16，$5.99 USD 单次 PayPal 购买。
+商品基线：`/`，英语界面，双人照片，10 秒 / 720p / 9:16，$5.99 USD 单次 PayPal 购买。
+
+2026-11-08 入口调整：视频在首页展示，原首页保留至 `/starter`、`/zh/starter`。旧 `/rap` 和本地化首页跳转 `/` 并保留查询参数。Google/GitHub 回调仍为 `/api/auth/callback/google`、`/api/auth/callback/github`；PayPal Rap Webhook 仍为 `/api/rap/paypal/webhook`，无需因首页调整重新注册这些 URL。首页继续预览期 noindex，未开放搜索收录或业务开关。
 
 阅读顺序：[Neon 数据库切换](./rap-neon.md) → 本文 → [R2 详细说明](./rap-r2.md) → [MVP 流程与执行逻辑](../RAPVIDEO-MVP-FLOW.md)。需求以 [MVP SPEC](../RAPVIDEO-MVP-SPEC.md) 为准。
 

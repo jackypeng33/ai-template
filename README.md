@@ -1,6 +1,6 @@
 # Sistine Starter: Vibe to Production
 
-BOOTH Rap MVP: independent `/rap` entry, preview mode by default. See [confirmed scope](docs/RAPVIDEO-MVP-SPEC.md), [implementation guide](docs/RAPVIDEO-MVP-IMPLEMENTATION.md) and [asset provenance](public/rap/ASSETS.md). Video generation is disabled; no real video API calls have been made for this MVP.
+BOOTH Rap MVP: video home at `/`, preview mode by default. The original starter home is preserved at `/starter` and `/zh/starter`; legacy `/rap` links redirect to `/` with query parameters preserved. See [confirmed scope](docs/RAPVIDEO-MVP-SPEC.md), [implementation guide](docs/RAPVIDEO-MVP-IMPLEMENTATION.md) and [asset provenance](public/rap/ASSETS.md). Video generation is disabled; no real video API calls have been made for this MVP.
 
 <div align="center">
   <h3>
