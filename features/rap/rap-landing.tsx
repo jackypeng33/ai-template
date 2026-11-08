@@ -61,7 +61,7 @@ function PhotoSlot({ side, file, onChange }: { side: "left" | "right"; file?: Fi
   </div>;
 }
 
-export function RapLanding({ googleEnabled = false, initialCheckoutAvailable = false }: { googleEnabled?: boolean; initialCheckoutAvailable?: boolean }) {
+export function RapLanding({ googleEnabled = false, githubEnabled = false, initialCheckoutAvailable = false }: { googleEnabled?: boolean; githubEnabled?: boolean; initialCheckoutAvailable?: boolean }) {
   const session = useSession(); const signedIn = Boolean(session.data?.user);
   const [draft, setDraft] = useState<RapDraft | null>(null);
   const [checkoutAvailable, setCheckoutAvailable] = useState(initialCheckoutAvailable);
@@ -194,6 +194,17 @@ export function RapLanding({ googleEnabled = false, initialCheckoutAvailable = f
       }
     } catch (e) { if (!signal.aborted) setError((e as Error).message); } finally { setCheckingPhotos(false); setBusy(false); lock.current = false; operation.current = null; }
   }
+  async function socialSignIn(provider: "google" | "github") {
+    setAuthBusy(true); setError("");
+    try {
+      // OAuth leaves this page; unlike in-tab email login, saving cannot be
+      // best-effort or the selected photos would be lost on return.
+      if (draft) await writeRapDraft(draft);
+      const result = await signIn.social({ provider, callbackURL: "/rap" });
+      if (result?.error) throw new Error("OAuth could not start");
+    } catch { setError(`${provider === "github" ? "GitHub" : "Google"} sign in could not start.`); }
+    finally { setAuthBusy(false); }
+  }
   async function authSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault(); setAuthBusy(true); setError("");
     const values = new FormData(event.currentTarget);
@@ -294,7 +305,8 @@ export function RapLanding({ googleEnabled = false, initialCheckoutAvailable = f
     <footer className={s.footer}><Link href="/rap" className={s.brandLink} aria-label="RapVideoMaker home"><BrandLogo size="sm" decorative /></Link><span>Two faces. One beat. A moment that’s yours.</span><div><Link href="/rap/policy#terms">Terms</Link><Link href="/rap/policy#privacy">Privacy</Link><Link href="/rap/policy#refunds">Refunds</Link>{support ? <a href={`mailto:${support}`}>Contact</a> : <Link href="/rap/policy#support">Support</Link>}</div></footer>
     <dialog ref={authDialog} className={s.dialog} onCancel={() => setAuthOpen(false)} onClose={() => setAuthOpen(false)}><button className={s.close} aria-label="Close sign in" onClick={() => setAuthOpen(false)}><X size={20} /></button><span className={s.kicker}>KEEP YOUR DUO TOGETHER</span><h2>{signup ? "JOIN THE BOOTH." : "WELCOME BACK."}</h2><p>Your photos stay here. Signing in does not charge you or start generation.</p>
       <form onSubmit={e => void authSubmit(e)}>{signup && <label>Your name<input name="name" required maxLength={100} autoComplete="name" /></label>}<label>Email<input name="email" type="email" required autoComplete="email" /></label><label>Password<input name="password" type="password" required minLength={8} autoComplete={signup ? "new-password" : "current-password"} /></label><button className={s.payButton} disabled={authBusy}>{authBusy ? "Please wait…" : signup ? "Create account" : "Sign in"}<ArrowUpRight size={17} /></button></form>
-      {googleEnabled && <button className={s.google} onClick={async () => { setAuthBusy(true); try { if (draft) await persist(draft); await signIn.social({ provider: "google", callbackURL: "/rap" }); } catch { setError("Google sign in could not start."); } finally { setAuthBusy(false); } }}>Continue with Google</button>}
+      {googleEnabled && <button type="button" className={s.google} disabled={authBusy} onClick={() => void socialSignIn("google")}>Continue with Google</button>}
+      {githubEnabled && <button type="button" className={s.google} disabled={authBusy} onClick={() => void socialSignIn("github")}>Continue with GitHub</button>}
       <button className={s.textButton} onClick={() => setSignup(v => !v)}>{signup ? "Already a member? Sign in" : "New here? Create an account"}</button><Link className={s.textButton} href="/forgot-password">Forgot password?</Link>
       <p className={s.termsLine}>By continuing you accept our <Link href="/rap/policy#terms">terms</Link> and <Link href="/rap/policy#privacy">privacy notice</Link>.</p>{error && <p role="alert" className={s.error}>{error}</p>}
     </dialog>

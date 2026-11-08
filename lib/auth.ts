@@ -1,9 +1,9 @@
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
-import { createAuthMiddleware } from "better-auth/api";
 import { db } from "./db";
 import { refundCredits } from "./credits";
 import { getGoogleAuthProvider } from "./auth/google-auth";
+import { getGitHubAuthProvider } from "./auth/github-auth";
 
 const defaultTrustedOrigins = ["http://localhost:3000"];
 
@@ -14,6 +14,7 @@ const trustedOrigins = process.env.BETTER_AUTH_TRUSTED_ORIGINS
   : defaultTrustedOrigins;
 
 const googleAuthProvider = getGoogleAuthProvider();
+const githubAuthProvider = getGitHubAuthProvider();
 
 export const auth = betterAuth({
   database: drizzleAdapter(db, {
@@ -26,36 +27,28 @@ export const auth = betterAuth({
   emailAndPassword: {
     enabled: true,
   },
-  ...(googleAuthProvider
-    ? {
-        socialProviders: {
-          google: googleAuthProvider,
-        },
-      }
-    : {}),
+  socialProviders: {
+    ...(googleAuthProvider ? { google: googleAuthProvider } : {}),
+    ...(githubAuthProvider ? { github: githubAuthProvider } : {}),
+  },
 
   trustedOrigins,
 
-  hooks: {
-    after: createAuthMiddleware(async (ctx) => {
-      // Listen for user registration events (email and OAuth)
-      if (ctx.path.startsWith("/sign-up")) {
-        const newSession = ctx.context.newSession;
-        if (newSession) {
+  databaseHooks: {
+    user: {
+      create: {
+        // Runs for email and OAuth signups, after creation commits. Signing in
+        // or linking another provider does not create a user or grant again.
+        after: async (user) => {
           try {
-            // Grant 300 credits as registration bonus
-            await refundCredits(
-              newSession.user.id,
-              300,
-              "registration_bonus"
-            );
-            console.log(`[Auth] New user registered, granted 300 credits: ${newSession.user.email}`);
+            const result = await refundCredits(user.id, 300, "registration_bonus");
+            if (!result.success) console.error("[Auth] Failed to grant registration bonus:", user.id);
           } catch (error) {
             console.error("[Auth] Failed to grant registration bonus:", error);
           }
-        }
-      }
-    }),
+        },
+      },
+    },
   },
 });
 

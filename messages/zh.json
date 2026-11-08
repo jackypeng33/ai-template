@@ -348,7 +348,8 @@
         "emailRequired": "请输入邮箱地址",
         "passwordRequired": "请输入密码",
         "loginFailed": "登录失败，请重试。",
-        "googleLoginFailed": "Google 登录失败，请重试。"
+        "googleLoginFailed": "Google 登录失败，请重试。",
+        "githubLoginFailed": "GitHub 登录失败，请重试。"
       }
     },
     "signup": {
@@ -369,11 +370,13 @@
         "emailRequired": "请输入邮箱地址",
         "passwordRequired": "请输入密码",
         "signupFailed": "注册失败，请重试。",
-        "googleSignupFailed": "Google 注册失败，请重试。"
+        "googleSignupFailed": "Google 注册失败，请重试。",
+        "githubSignupFailed": "GitHub 注册失败，请重试。"
       }
     },
     "social": {
       "googleSignIn": "使用 Google 继续",
+      "githubSignIn": "使用 GitHub 继续",
       "or": "或者继续使用"
     },
     "checkEmail": {

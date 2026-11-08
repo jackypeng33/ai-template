@@ -9,7 +9,7 @@ Enabled by default. Users register with email, name, and password.
 
 ### Email Verification
 
-Email verification is required by default. Configure in `lib/auth.ts`:
+Better Auth does not currently set `requireEmailVerification`. To require it at sign-in, configure `lib/auth.ts`:
 
 ```typescript
 emailAndPassword: {
@@ -35,28 +35,30 @@ Google login is optional. The starter only enables the provider when both `AUTH_
 
 1. Create OAuth credentials at [Google Cloud Console](https://console.cloud.google.com/)
 2. Set authorized redirect URI to: `{YOUR_URL}/api/auth/callback/google`
-3. Add to `.env`:
+3. Add to `.env.local` (or your deployment's server environment):
 
 ```ini
 AUTH_GOOGLE_ID="your-client-id"
 AUTH_GOOGLE_SECRET="your-client-secret"
 ```
 
-### Adding More Providers
+## GitHub OAuth
 
-Better Auth supports many OAuth providers. To add GitHub, for example:
+GitHub is already integrated. Both `AUTH_GITHUB_ID` and `AUTH_GITHUB_SECRET` must be nonblank; Google and GitHub are enabled independently. Login, signup, and the `/rap` dialog hide unconfigured providers.
 
-1. Install the provider (if needed)
-2. Add to `socialProviders` in `lib/auth.ts`:
+1. Create a GitHub OAuth App under Settings → Developer settings → OAuth Apps. Use separate clients for development and production.
+2. Register `http://localhost:3000/api/auth/callback/github` locally, or `https://YOUR_DOMAIN/api/auth/callback/github` in production.
+3. Set the following in `.env.local`, or in your deployment's server environment, and restart/redeploy:
 
-```typescript
-socialProviders: {
-  google: { ... },
-  github: {
-    clientId: process.env.AUTH_GITHUB_ID!,
-    clientSecret: process.env.AUTH_GITHUB_SECRET!,
-  },
-}
+```ini
+AUTH_GITHUB_ID="your-client-id"
+AUTH_GITHUB_SECRET="your-client-secret"
 ```
 
-3. Add the login button in `features/auth/components/`
+Keep `BETTER_AUTH_URL`, `NEXT_PUBLIC_APP_URL`, and `BETTER_AUTH_TRUSTED_ORIGINS` aligned with the site origin. Secrets stay server-side. The existing Better Auth catch-all handles callbacks; no new database migration is required.
+
+GitHub's built-in provider requests `read:user` and `user:email`, including private email lookup. A missing usable email fails authentication (`email_not_found`); no placeholder email is fabricated. Existing-account linking follows Better Auth's default verified-email rules; no trusted-provider bypass is added.
+
+New users receive the 300-credit registration bonus through `databaseHooks.user.create.after`, using the existing balance/ledger transaction. Signing in again or linking an existing account does not create another user or bonus. A failed grant is logged; automatic retry is not implemented. `/rap` saves the photo draft before OAuth and returns to `/rap` without purchasing or generating.
+
+After configuration, verify an initial signup, repeat login, private-email login, existing-email account linking, denied authorization, and Rap draft restoration. Automated tests mock GitHub HTTP; real OAuth credentials and redirect validation still require a controlled end-to-end check.

@@ -1,9 +1,9 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ImgHTMLAttributes } from "react";
-const auth = vi.hoisted(() => ({ signedIn: false, email: vi.fn(), signup: vi.fn(), refetch: vi.fn() }));
+const auth = vi.hoisted(() => ({ signedIn: false, email: vi.fn(), social: vi.fn(), signup: vi.fn(), refetch: vi.fn() }));
 const draft = vi.hoisted(() => ({ read: vi.fn(), write: vi.fn(), clear: vi.fn() }));
-vi.mock("@/lib/auth-client", () => ({ useSession: () => ({ data: auth.signedIn ? { user: { email: "buyer@test.invalid" } } : null, refetch: auth.refetch }), signIn: { email: auth.email }, signUp: { email: auth.signup } }));
+vi.mock("@/lib/auth-client", () => ({ useSession: () => ({ data: auth.signedIn ? { user: { email: "buyer@test.invalid" } } : null, refetch: auth.refetch }), signIn: { email: auth.email, social: auth.social }, signUp: { email: auth.signup } }));
 vi.mock("@/features/rap/draft", () => ({ readRapDraft: draft.read, writeRapDraft: draft.write, clearRapDraft: draft.clear }));
 vi.mock("next/image", () => ({ default: ({ fill: _fill, unoptimized: _unoptimized, priority: _priority, ...props }: ImgHTMLAttributes<HTMLImageElement> & { fill?: boolean; unoptimized?: boolean; priority?: boolean }) => {
   void _fill; void _unoptimized; void _priority;
@@ -15,6 +15,7 @@ import { RapLanding } from "@/features/rap/rap-landing";
 describe("BOOTH customer flow", () => {
   const fetchMock = vi.fn();
   beforeEach(() => {
+    auth.social.mockReset();
     auth.signedIn = false; draft.read.mockResolvedValue(undefined); draft.write.mockResolvedValue(undefined);
     vi.stubGlobal("fetch", fetchMock); fetchMock.mockReset();
     fetchMock.mockImplementation((url: string) => Promise.resolve(Response.json(url.includes("config") ? { checkoutAvailable: false } : url.includes("orders") ? { orders: [] } : {})));
@@ -22,6 +23,35 @@ describe("BOOTH customer flow", () => {
     HTMLDialogElement.prototype.showModal = function () { this.setAttribute("open", ""); };
     HTMLDialogElement.prototype.close = function () { this.removeAttribute("open"); };
     window.history.replaceState({}, "", "/rap");
+  });
+  it("saves photos before GitHub redirect and returns to Rap without checkout", async () => {
+    const file = new File(["photo"], "photo.png", { type: "image/png" });
+    draft.read.mockResolvedValue({ left: file, right: file, requestId: crypto.randomUUID(), savedAt: Date.now() });
+    render(<RapLanding githubEnabled />);
+    await screen.findByAltText("left person preview");
+    fireEvent.click(screen.getByRole("button", { name: "Continue with your photos" }));
+    const button = await screen.findByRole("button", { name: "Continue with GitHub" });
+    expect(screen.queryByRole("button", { name: "Continue with Google" })).not.toBeInTheDocument();
+    auth.social.mockImplementation(() => {
+      expect(draft.write).toHaveBeenCalledWith(expect.objectContaining({ left: file, right: file }));
+      return Promise.resolve({ data: { url: "https://github.com/login/oauth/authorize" }, error: null });
+    });
+    fireEvent.click(button);
+    await waitFor(() => expect(auth.social).toHaveBeenCalledWith({ provider: "github", callbackURL: "/rap" }));
+    expect(fetchMock.mock.calls.some(([url]) => /generate|assets|\/orders/.test(String(url)))).toBe(false);
+  });
+
+  it("does not redirect when saving the OAuth draft fails", async () => {
+    const file = new File(["photo"], "photo.png", { type: "image/png" });
+    draft.read.mockResolvedValue({ left: file, right: file, requestId: crypto.randomUUID(), savedAt: Date.now() });
+    render(<RapLanding githubEnabled />);
+    await screen.findByAltText("left person preview");
+    fireEvent.click(screen.getByRole("button", { name: "Continue with your photos" }));
+    const button = await screen.findByRole("button", { name: "Continue with GitHub" });
+    draft.write.mockRejectedValueOnce(new Error("Storage unavailable"));
+    fireEvent.click(button);
+    expect(await screen.findByRole("alert")).toHaveTextContent("GitHub sign in could not start.");
+    expect(auth.social).not.toHaveBeenCalled();
   });
   it("requires both photos before opening sign-in or any checkout", async () => {
     render(<RapLanding />); const button = screen.getByRole("button", { name: "Continue with your photos" });

@@ -5,7 +5,7 @@ description: User authentication system powered by Better Auth.
 
 ## Overview
 
-Sistine Starter uses [Better Auth](https://better-auth.com/) for authentication, supporting email/password login and optional Google OAuth.
+Sistine Starter uses [Better Auth](https://better-auth.com/) for authentication, supporting email/password login and optional Google and GitHub OAuth.
 
 ### Supported Auth Methods
 
@@ -25,28 +25,21 @@ Sistine Starter uses [Better Auth](https://better-auth.com/) for authentication,
 The auth configuration lives in `lib/auth.ts`:
 
 ```typescript
+const google = getGoogleAuthProvider();
+const github = getGitHubAuthProvider();
+
 export const auth = betterAuth({
-  database: drizzleAdapter(db, {
-    provider: "pg",
-  }),
-  emailAndPassword: {
-    enabled: true,
-    requireEmailVerification: true,
+  database: drizzleAdapter(db, { provider: "pg" }),
+  emailAndPassword: { enabled: true },
+  socialProviders: {
+    ...(google ? { google } : {}),
+    ...(github ? { github } : {}),
   },
-  ...(process.env.AUTH_GOOGLE_ID && process.env.AUTH_GOOGLE_SECRET
-    ? {
-        socialProviders: {
-          google: {
-            clientId: process.env.AUTH_GOOGLE_ID,
-            clientSecret: process.env.AUTH_GOOGLE_SECRET,
-          },
-        },
-      }
-    : {}),
+  // lib/auth.ts also defines the user-create registration bonus hook.
 });
 ```
 
-When the Google credentials are missing, the starter keeps email/password auth enabled and hides the Google button from the login and signup forms.
+Each OAuth provider requires its own complete credentials; disabled buttons are hidden on login, signup, and `/rap`. See [Auth Providers](./providers) for setup. The user-create hook grants the registration bonus for email and OAuth signups, without granting again on login or account linking.
 
 ### Session Management
 

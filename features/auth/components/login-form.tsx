@@ -16,9 +16,10 @@ import { LoginInput, loginSchema } from "@/features/auth/schemas";
 
 interface LoginFormProps {
   showGoogleAuth?: boolean;
+  showGitHubAuth?: boolean;
 }
 
-export function LoginForm({ showGoogleAuth = true }: LoginFormProps) {
+export function LoginForm({ showGoogleAuth = true, showGitHubAuth = false }: LoginFormProps) {
   const router = useRouter();
   const locale = useLocale();
   const t = useTranslations('auth.login');
@@ -56,15 +57,15 @@ export function LoginForm({ showGoogleAuth = true }: LoginFormProps) {
     }
   }
 
-  async function handleGoogleSignIn() {
+  async function handleSocialSignIn(provider: "google" | "github") {
+    const errorKey = provider === "github" ? "errors.githubLoginFailed" : "errors.googleLoginFailed";
     try {
       setIsLoading(true);
-      await signIn.social({
-        provider: "google",
-        callbackURL: "/",
-      });
+      setError(null);
+      const result = await signIn.social({ provider, callbackURL: "/" });
+      if (result?.error) setError(t(errorKey));
     } catch {
-      setError(t('errors.googleLoginFailed'));
+      setError(t(errorKey));
     } finally {
       setIsLoading(false);
     }
@@ -88,8 +89,12 @@ export function LoginForm({ showGoogleAuth = true }: LoginFormProps) {
         </p>
       }
       socialSlot={
-        showGoogleAuth ? (
-          <SocialAuthButtons onGoogleSignIn={handleGoogleSignIn} isLoading={isLoading} />
+        showGoogleAuth || showGitHubAuth ? (
+          <SocialAuthButtons
+            onGoogleSignIn={showGoogleAuth ? () => handleSocialSignIn("google") : undefined}
+            onGitHubSignIn={showGitHubAuth ? () => handleSocialSignIn("github") : undefined}
+            isLoading={isLoading}
+          />
         ) : undefined
       }
     >

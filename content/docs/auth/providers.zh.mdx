@@ -9,7 +9,7 @@ description: 配置应用的认证提供商。
 
 ### 邮箱验证
 
-默认要求邮箱验证。在 `lib/auth.ts` 中配置：
+当前 Better Auth 未设置 `requireEmailVerification`。如需在登录时强制验证，可在 `lib/auth.ts` 中配置：
 
 ```typescript
 emailAndPassword: {
@@ -35,28 +35,30 @@ Google 登录是可选项。只有同时配置 `AUTH_GOOGLE_ID` 和 `AUTH_GOOGLE
 
 1. 在 [Google Cloud Console](https://console.cloud.google.com/) 创建 OAuth 凭据
 2. 设置授权重定向 URI：`{YOUR_URL}/api/auth/callback/google`
-3. 添加到 `.env`：
+3. 添加到 `.env.local`（或部署平台的服务端环境变量）：
 
 ```ini
 AUTH_GOOGLE_ID="your-client-id"
 AUTH_GOOGLE_SECRET="your-client-secret"
 ```
 
-### 添加更多提供商
+## GitHub OAuth
 
-Better Auth 支持多种 OAuth 提供商。例如添加 GitHub：
+GitHub 已集成。`AUTH_GITHUB_ID` 和 `AUTH_GITHUB_SECRET` 均非空时启用，与 Google 独立控制。通用登录页、注册页和 `/rap` 弹窗均隐藏未配置的提供商。
 
-1. 安装提供商（如需要）
-2. 在 `lib/auth.ts` 的 `socialProviders` 中添加：
+1. 在 GitHub Settings → Developer settings → OAuth Apps 创建 OAuth App，建议开发和生产分别创建。
+2. 本地回调配置 `http://localhost:3000/api/auth/callback/github`，生产配置 `https://你的域名/api/auth/callback/github`。
+3. 在 `.env.local` 或部署平台服务端环境变量中填写，然后重启或重新部署：
 
-```typescript
-socialProviders: {
-  google: { ... },
-  github: {
-    clientId: process.env.AUTH_GITHUB_ID!,
-    clientSecret: process.env.AUTH_GITHUB_SECRET!,
-  },
-}
+```ini
+AUTH_GITHUB_ID="your-client-id"
+AUTH_GITHUB_SECRET="your-client-secret"
 ```
 
-3. 在 `features/auth/components/` 中添加登录按钮
+`BETTER_AUTH_URL`、`NEXT_PUBLIC_APP_URL` 和 `BETTER_AUTH_TRUSTED_ORIGINS` 应与网站来源一致。密钥仅在服务端保存。现有 Better Auth catch-all 接口处理回调，无需新增数据库迁移。
+
+GitHub 内置提供商请求 `read:user` 和 `user:email` 权限，包含私有邮箱查询。无法取得可用邮箱时拒绝认证（`email_not_found`），不伪造占位邮箱。已有账号的关联遵循 Better Auth 默认的已验证邮箱规则，不添加可信提供商绕过逻辑。
+
+首次创建用户通过 `databaseHooks.user.create.after` 发放 300 注册积分，沿用现有余额与流水事务。再次登录或关联已有账号不会再次创建用户或发放奖励。发放失败会记录日志，尚无自动重试。`/rap` 在 OAuth 跳转前保存照片草稿，登录后返回 `/rap`，不会自动购买或生成。
+
+配置后验证首次注册、重复登录、私有邮箱、同邮箱已有账号关联、取消授权和 Rap 草稿恢复。自动化测试模拟 GitHub HTTP；真实凭证和回调地址仍需受控端到端验证。

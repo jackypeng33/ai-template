@@ -18,7 +18,7 @@ This file gives coding agents an accurate working map for this repository.
 
 The repo already includes:
 
-- Better Auth email/password auth plus Google OAuth UI
+- Better Auth email/password auth plus optional Google and GitHub OAuth UI
 - Credit-based billing with Creem subscriptions and one-time packs
 - Volcano Engine integrations for chat, image generation, and video generation
 - Admin screens for users, subscriptions, and credit operations
@@ -131,6 +131,7 @@ The important groups are:
 - Database: `DATABASE_URL`
 - Auth: `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`
 - Optional Google auth: `AUTH_GOOGLE_ID`, `AUTH_GOOGLE_SECRET`
+- Optional GitHub auth: `AUTH_GITHUB_ID`, `AUTH_GITHUB_SECRET`
 - AI: `VOLCANO_ENGINE_API_KEY`, `VOLCANO_ENGINE_API_URL`
 - Payments: `CREEM_API_KEY`, `CREEM_WEBHOOK_SECRET`
 - Email: `RESEND_API_KEY`, `RESEND_FROM_EMAIL`
@@ -143,10 +144,11 @@ The important groups are:
 ### 1. Auth and signup
 
 - Better Auth is configured in `lib/auth.ts`.
-- New signups receive a 300 credit registration bonus in the auth hook.
+- New signups receive a 300 credit registration bonus in `databaseHooks.user.create.after`, covering email and OAuth creation; repeat login or account linking does not grant again.
 - If you change signup behavior, preserve the registration bonus flow unless the product decision explicitly changes it.
 - Google OAuth is optional now. It is enabled only when both `AUTH_GOOGLE_ID` and `AUTH_GOOGLE_SECRET` are present.
-- The login and signup forms should stay in sync with the server config: if the provider is disabled, the Google button should not render.
+- GitHub OAuth is optional and requires both `AUTH_GITHUB_ID` and `AUTH_GITHUB_SECRET`.
+- Login/signup forms and the `/rap` dialog must hide each disabled provider independently.
 
 ### 2. Credits and ledger integrity
 

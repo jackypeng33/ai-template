@@ -79,6 +79,8 @@ BETTER_AUTH_TRUSTED_ORIGINS="https://booth.example.com"
 
 Google OAuth 为可选：只有 `AUTH_GOOGLE_ID` 和 `AUTH_GOOGLE_SECRET` 同时存在才启用。不需要 Google 时将示例占位值留空。邮件密码登录可以独立使用。
 
+GitHub OAuth 同样可选：同时配置 `AUTH_GITHUB_ID` 和 `AUTH_GITHUB_SECRET`。在 GitHub OAuth App 中注册 `/api/auth/callback/github` 的完整本地或生产地址；登录页、注册页和 Rap 弹窗会独立显示 GitHub 按钮。配置后重启或重新部署。Rap 在跳转前成功保存草稿才会继续 OAuth。详见 [GitHub 配置说明](../../content/docs/auth/providers.zh.mdx)。
+
 ## 5. R2 私有存储
 
 详见 [rap-r2.md](./rap-r2.md)，操作顺序：

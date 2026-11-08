@@ -5,12 +5,13 @@ description: 基于 Better Auth 的用户认证系统。
 
 ## 概述
 
-Sistine Starter 使用 [Better Auth](https://better-auth.com/) 进行用户认证，支持邮箱密码登录和可选的 Google OAuth。
+Sistine Starter 使用 [Better Auth](https://better-auth.com/) 进行用户认证，支持邮箱密码登录和可选的 Google、GitHub OAuth。
 
 ### 支持的认证方式
 
 - **邮箱 + 密码** — 传统注册，需要邮箱验证
 - **Google OAuth** — 可选的 Google 账号社交登录
+- **GitHub OAuth** — 可选的 GitHub 账号社交登录
 
 ### 注册流程
 
@@ -25,28 +26,21 @@ Sistine Starter 使用 [Better Auth](https://better-auth.com/) 进行用户认�
 认证配置在 `lib/auth.ts`：
 
 ```typescript
+const google = getGoogleAuthProvider();
+const github = getGitHubAuthProvider();
+
 export const auth = betterAuth({
-  database: drizzleAdapter(db, {
-    provider: "pg",
-  }),
-  emailAndPassword: {
-    enabled: true,
-    requireEmailVerification: true,
+  database: drizzleAdapter(db, { provider: "pg" }),
+  emailAndPassword: { enabled: true },
+  socialProviders: {
+    ...(google ? { google } : {}),
+    ...(github ? { github } : {}),
   },
-  ...(process.env.AUTH_GOOGLE_ID && process.env.AUTH_GOOGLE_SECRET
-    ? {
-        socialProviders: {
-          google: {
-            clientId: process.env.AUTH_GOOGLE_ID,
-            clientSecret: process.env.AUTH_GOOGLE_SECRET,
-          },
-        },
-      }
-    : {}),
+  // lib/auth.ts also defines the user-create registration bonus hook.
 });
 ```
 
-如果没有配置 Google 凭据，邮箱密码登录仍然可用，登录页和注册页中的 Google 按钮也会自动隐藏。
+各 OAuth 提供商需要各自完整的凭据，登录页、注册页和 `/rap` 会独立隐藏未启用的按钮。配置步骤见[认证提供商](./providers)。用户创建 hook 为邮箱和 OAuth 首次注册发放积分；重复登录和账号关联不再次发放。
 
 ### 会话管理
 

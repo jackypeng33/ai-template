@@ -2,6 +2,7 @@ import { LoginForm } from "@/features/auth/components/login-form";
 import { Metadata } from "next";
 import { getTranslations } from 'next-intl/server';
 import type { Locale } from "@/i18n.config";
+import { isGitHubAuthEnabled } from "@/lib/auth/github-auth";
 import { isGoogleAuthEnabled } from "@/lib/auth/google-auth";
 
 export async function generateMetadata(
@@ -22,5 +23,5 @@ export async function generateMetadata(
 }
 
 export default function LoginPage() {
-  return <LoginForm showGoogleAuth={isGoogleAuthEnabled()} />;
+  return <LoginForm showGoogleAuth={isGoogleAuthEnabled()} showGitHubAuth={isGitHubAuthEnabled()} />;
 }
