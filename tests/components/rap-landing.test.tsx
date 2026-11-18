@@ -29,7 +29,7 @@ describe("BOOTH customer flow", () => {
     draft.read.mockResolvedValue({ left: file, right: file, requestId: crypto.randomUUID(), savedAt: Date.now() });
     render(<RapLanding githubEnabled />);
     await screen.findByAltText("left person preview");
-    fireEvent.click(screen.getByRole("button", { name: "Continue with your photos" }));
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
     const button = await screen.findByRole("button", { name: "Continue with GitHub" });
     expect(screen.queryByRole("button", { name: "Continue with Google" })).not.toBeInTheDocument();
     auth.social.mockImplementation(() => {
@@ -46,7 +46,7 @@ describe("BOOTH customer flow", () => {
     draft.read.mockResolvedValue({ left: file, right: file, requestId: crypto.randomUUID(), savedAt: Date.now() });
     render(<RapLanding githubEnabled />);
     await screen.findByAltText("left person preview");
-    fireEvent.click(screen.getByRole("button", { name: "Continue with your photos" }));
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
     const button = await screen.findByRole("button", { name: "Continue with GitHub" });
     draft.write.mockRejectedValueOnce(new Error("Storage unavailable"));
     fireEvent.click(button);
@@ -54,29 +54,34 @@ describe("BOOTH customer flow", () => {
     expect(auth.social).not.toHaveBeenCalled();
   });
   it("requires both photos before opening sign-in or any checkout", async () => {
-    render(<RapLanding />); const button = screen.getByRole("button", { name: "Continue with your photos" });
+    fetchMock.mockResolvedValue(Response.json({ checkoutAvailable: true }));
+    render(<RapLanding initialCheckoutAvailable />); const button = screen.getByRole("button", { name: "Continue with your photos" });
     await waitFor(() => expect(button).toBeEnabled()); fireEvent.click(button);
     expect(await screen.findByRole("alert")).toHaveTextContent("Add both photos");
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(fetchMock.mock.calls.some(([u]) => String(u).endsWith("/orders"))).toBe(false);
   });
-  it("restores photos before sign in, labels concept art, and does not start generation", async () => {
+  it("lets guests try sample photos without opening sign-in or starting generation", async () => {
     const file = new File(["photo"], "photo.png", { type: "image/png" });
-    draft.read.mockResolvedValue({ left: file, right: file, requestId: crypto.randomUUID(), savedAt: Date.now() });
+    fetchMock.mockImplementation(async (url: string) => url.startsWith("/rap/sample-")
+      ? { blob: async () => file }
+      : Response.json({ checkoutAvailable: false }));
     render(<RapLanding />);
+    const sampleButton = screen.getByRole("button", { name: "Try sample photos" });
+    await waitFor(() => expect(sampleButton).toBeEnabled());
+    fireEvent.click(sampleButton);
     expect(await screen.findByAltText("left person preview")).toBeInTheDocument();
+    expect(screen.getByAltText("right person preview")).toBeInTheDocument();
     expect(screen.getByText("CONCEPT ART · NOT A GENERATED VIDEO")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Continue with your photos" }));
-    expect(await screen.findByRole("dialog")).toHaveTextContent("Signing in does not charge you");
-    expect(draft.write).toHaveBeenCalled();
-    expect(fetchMock.mock.calls.some(([u]) => /kie|generate|assets|orders/.test(String(u)))).toBe(false);
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(fetchMock.mock.calls.some(([u]) => /kie|generate|uploads|assets|orders/.test(String(u)))).toBe(false);
   });
   it("does not charge or upload in preview mode, even for an authenticated user", async () => {
     auth.signedIn = true; const file = new File(["photo"], "photo.png", { type: "image/png" });
     draft.read.mockResolvedValue({ left: file, right: file, requestId: crypto.randomUUID(), savedAt: Date.now() });
     render(<RapLanding />); await screen.findByAltText("left person preview");
-    fireEvent.click(screen.getByRole("button", { name: "Pay $5.99 & generate" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent("Checkout is not open yet");
+    expect(screen.queryByRole("button", { name: "Pay $5.99 & generate" })).not.toBeInTheDocument();
+    expect(screen.getByText("Video generation and checkout are paused.")).toBeInTheDocument();
     expect(fetchMock.mock.calls.filter(([url, options]) => String(url).includes("/api/rap/orders") && options?.method === "POST")).toHaveLength(0);
   });
   it("rechecks saved photo IDs and blocks payment when either photo is rejected", async () => {

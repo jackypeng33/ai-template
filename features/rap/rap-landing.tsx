@@ -3,11 +3,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { BrandLogo } from "@/components/brand/brand-logo";
-import { ArrowDown, ArrowUpRight, Check, ChevronRight, CircleHelp, Download, Headphones, LoaderCircle, Mic2, Play, Plus, RefreshCw, ShieldCheck, Sparkles, Upload, X } from "lucide-react";
+import { ArrowUpRight, ChevronRight, Download, Headphones, LoaderCircle, Mic2, Play, Plus, RefreshCw, ShieldCheck, Sparkles, Upload, X } from "lucide-react";
 import { signIn, signUp, useSession } from "@/lib/auth-client";
 import { RAP_PRODUCT } from "@/lib/rap/config";
 import { readRapDraft, writeRapDraft, clearRapDraft, type RapDraft } from "./draft";
 import s from "./rap.module.css";
+import { homeSections, RapHomeGuide } from "./rap-home-guide";
 import { trackRap } from "./metrics";
 
 type ModerationStatus = "pending" | "processing" | "approved" | "rejected" | "error";
@@ -212,7 +213,7 @@ export function RapLanding({ googleEnabled = false, githubEnabled = false, initi
       const credentials = { email: String(values.get("email")), password: String(values.get("password")) };
       const result = signup ? await signUp.email({ ...credentials, name: String(values.get("name")) }) : await signIn.email(credentials);
       if (result.error) throw new Error(result.error.message || "Could not sign in.");
-      setAuthOpen(false); setNotice("You're signed in. Review your photos and click Pay & generate when ready.");
+      setAuthOpen(false); setNotice(checkoutAvailable ? "You're signed in. Review your photos and click Pay & generate when ready." : "You're signed in. Checkout and generation are paused.");
       await session.refetch();
     } catch (e) { setError((e as Error).message); } finally { setAuthBusy(false); }
   }
@@ -228,48 +229,46 @@ export function RapLanding({ googleEnabled = false, githubEnabled = false, initi
   }
 
   return <div className={s.page}>
-    <header className={s.header}><Link href="/" className={s.brandLink} aria-label="RapVideoMaker home"><BrandLogo size="sm" decorative /></Link>
-      <nav aria-label="Main navigation"><a href="#how-it-works">How it works</a><a href="#the-track">The track</a><a href="#faq">FAQs</a></nav>
+    <header className={s.header}>
+      <Link href="/" className={s.homeWordmark} aria-label="RapVideoMaker home">
+        <Image src="/brand/logo-symbol.svg" alt="" width={24} height={24} loading="eager" />
+        <strong>RapVideoMaker</strong>
+      </Link>
       <button className={s.accountButton} onClick={() => { if (signedIn) { setShowOrders(v => !v); void loadOrders(); } else setAuthOpen(true); }}>{signedIn ? "My videos" : "Sign in"}<ArrowUpRight size={14} /></button>
     </header>
     <main>
-      <section className={s.hero}>
-        <div className={s.heroCopy}><div className={s.eyebrow}><span /> YOUR CAMERA ROLL HAS A NEW SIDE HUSTLE</div>
-          <h1>TWO PHOTOS.<br />ONE <span>RAP</span><br /><span className={s.outline}>MOMENT.</span><span className={s.star}>✳</span></h1>
-          <p>You. Your best friend. A mic between you.<br />Turn two photos into a {RAP_PRODUCT.duration}-second rap moment worth sending to the group chat.</p>
-          <a className={s.heroCta} href="#create">Put us in the booth <ArrowDown size={17} /></a>
-          <div className={s.heroNotes}><span><Check size={13} /> No filming</span><span><Check size={13} /> No singing</span><span><Check size={13} /> Just your photos</span></div>
-          <div className={s.miniNote}>THE ORANGE BOOTH · VOL. 01 <span>ONE TRACK. YOUR DUO.</span></div>
-        </div>
-        <div className={s.posterArea}><div className={s.posterSticker}>YOUR DUO.<br />MAIN CHARACTER<br />ENERGY. ↗</div>
-          <div className={s.poster}><Image src="/rap/booth-concept-v1.webp" alt="Concept art: two people in an orange recording booth with a microphone" fill priority sizes="(max-width: 700px) 85vw, 420px" />
-            <div className={s.posterTop}><span><span className={s.recDot} /> BOOTH SESSIONS</span><span>VOL. 001</span></div>
-            <div className={s.posterBottom}><span className={s.conceptLabel}>CONCEPT ART · NOT A GENERATED VIDEO</span><strong>BETTER<br />TOGETHER.</strong><div className={s.posterSpecs}><span>{RAP_PRODUCT.duration} SEC</span><span>9:16</span><span>720P</span></div></div>
-          </div><div className={s.posterCaption}><span>01 / THE ORANGE BOOTH</span><span>← YOUR NEXT GROUP CHAT DROP</span></div>
-        </div>
-      </section>
-      <div className={s.ticker} aria-hidden="true"><span>TWO FACES</span>✳<span>ONE BEAT</span>✳<span>ZERO STAGE FRIGHT</span>✳<span>ALL YOU</span>✳<span>TWO FACES</span>✳<span>ONE BEAT</span></div>
-      <section id="create" className={s.createSection}>
-        <div className={s.sectionIntro}><span className={s.kicker}>01 — MAKE AN ENTRANCE</span><h2>THE BOOTH<br />IS YOURS.</h2><p>One takes the mic. One brings the hype.<br />Pick your people. We handle the performance.</p>
-          <div className={s.formatCard}><Mic2 size={24} /><div><strong>The Orange Booth</strong><span>Original beat · Left lead, right hype</span></div><span className={s.selectedBadge}><Check size={14} /> SELECTED</span></div>
-          <div className={s.specRow}><span>{RAP_PRODUCT.duration}-second video</span><span>Vertical 9:16</span><span>720p MP4</span></div>
-          <p className={s.honestNote}><CircleHelp size={15} /> AI performances can vary. Faces and lip sync may not be exact. The illustration above is concept art; a verified video sample is coming.</p>
+      <section id="create" className={s.homeHero} aria-labelledby="home-heading">
+        <div className={s.homeIntro}>
+          <span className={s.kicker}>{checkoutAvailable ? "DUO RAP VIDEO" : "FREE PHOTO PREVIEW"}</span>
+          <h1 id="home-heading">AI Rap Video Generator &amp; AI Rap Video Maker for Your Duo</h1>
+          <p>Pick two photos and hear the built-in beat for a vertical duo clip. Try it in your browser. No app to install.</p>
         </div>
         <div className={s.creator}><div className={s.creatorHeading}><strong>BUILD YOUR DUO</strong><span>STEP 1 OF 1</span></div>
           <div className={s.photoGrid}><PhotoSlot side="left" file={draft?.left} onChange={f => void choose("left", f)} /><span className={s.photoPlus}>+</span><PhotoSlot side="right" file={draft?.right} onChange={f => void choose("right", f)} /></div>
           <div className={s.photoHelp}>Clear, front-facing photos work best. One adult per photo. At least 300 × 300 px; up to 10 MB each. Use photos you have permission to use. NSFW content is not allowed.</div>
           {Object.entries(photoChecks).map(([side, status]) => <p key={side} className={s.notice} role="status">{side === "left" ? "Your photo" : "Your friend’s photo"}: {status === "approved" ? "Content check passed" : status === "rejected" ? "Not approved — replace this photo" : status === "error" ? "Check delayed — try again later" : "Checking content…"}</p>)}
-          <button className={s.sampleButton} disabled={busy || !draft} onClick={() => void loadSamplePhotos()}><Sparkles size={14} /> Just exploring? Try the sample photos <ChevronRight size={14} /></button>
-          <div className={s.checkoutSummary}><div><strong>{retryOrder ? "Your replacement" : "One duo. One video."}</strong><span>{retryOrder ? "Uses your returned generation opportunity" : "One-time payment. No subscription."}</span></div><strong className={s.price}>{retryOrder ? "$0" : price}<small>USD</small></strong></div>
-          {retryOrder && <button className={s.textButton} onClick={() => setRetryOrder(null)}>Cancel replacement selection</button>}
-          <button className={s.payButton} disabled={busy || !draft} onClick={() => void checkout()}>{busy ? <LoaderCircle className={s.spin} size={18} /> : <Mic2 size={18} />}{busy ? checkingPhotos ? "Checking photos…" : "Preparing your checkout…" : retryOrder ? "Use replacement & generate" : signedIn ? `Pay ${price} & generate` : "Continue with your photos"}<ArrowUpRight size={19} /></button>
-          {!checkoutAvailable && <div className={s.previewNotice}>PREVIEW MODE — Payments and video generation are paused. No video API is called.</div>}
-          <div className={s.secureLine}><ShieldCheck size={13} /> PayPal checkout · Photos deleted within 24h of task completion · Video kept 7 days</div>
-          <p className={s.termsLine}>By purchasing, you accept the <Link href="/rap/policy#terms">terms</Link>, <Link href="/rap/policy#privacy">privacy</Link> and <Link href="/rap/policy#refunds">refund policy</Link>.</p>
+          <button className={`${s.sampleButton} ${checkoutAvailable ? "" : s.homeSampleCta}`} disabled={busy || !draft} onClick={() => void loadSamplePhotos()}><Sparkles size={14} /> Try sample photos <ChevronRight size={14} /></button>
+          {checkoutAvailable && <>
+            <div className={s.checkoutSummary}><div><strong>{retryOrder ? "Your replacement" : "One duo. One video."}</strong><span>{retryOrder ? "Uses your returned generation opportunity" : "One-time payment. No subscription."}</span></div><strong className={s.price}>{retryOrder ? "$0" : price}<small>USD</small></strong></div>
+            {retryOrder && <button className={s.textButton} onClick={() => setRetryOrder(null)}>Cancel replacement selection</button>}
+            <button className={s.payButton} disabled={busy || !draft} onClick={() => void checkout()}>{busy ? <LoaderCircle className={s.spin} size={18} /> : <Mic2 size={18} />}{busy ? checkingPhotos ? "Checking photos…" : "Preparing your checkout…" : retryOrder ? "Use replacement & generate" : signedIn ? `Pay ${price} & generate` : "Continue with your photos"}<ArrowUpRight size={19} /></button>
+            <div className={s.secureLine}><ShieldCheck size={13} /> PayPal checkout · Photos deleted within 24h of task completion · Video kept 7 days</div>
+            <p className={s.termsLine}>By purchasing, you accept the <Link href="/rap/policy#terms">terms</Link>, <Link href="/rap/policy#privacy">privacy</Link> and <Link href="/rap/policy#refunds">refund policy</Link>.</p>
+          </>}
+          <ul className={s.homeFacts}>
+            <li><strong>Price:</strong> The photo preview is free.</li>
+            <li><strong>Account:</strong> Preview without signing in; sign in to buy.</li>
+            <li><strong>Timing:</strong> {checkoutAvailable ? "Processing time varies." : "Video generation and checkout are paused."}</li>
+            <li><strong>Watermark:</strong> The policy has not been confirmed.</li>
+          </ul>
           {error && !authOpen && !feedback && <p className={s.error} role="alert">{error}</p>}
           {notice && <p className={s.notice} role="status">{notice}</p>}
         </div>
       </section>
+      <nav className={s.homeContents} aria-label="On this page">
+        <span>On this page</span>
+        <ul>{homeSections.map(([id, label]) => <li key={id}><a href={`#${id}`}>{label}</a></li>)}</ul>
+      </nav>
       {signedIn && <section id="my-videos" className={s.ordersSection}><div className={s.ordersHeading}><div><span className={s.kicker}>YOUR SESSIONS</span><h2>MY VIDEOS.</h2></div><button className={s.accountButton} onClick={() => { setShowOrders(v => !v); void loadOrders(); }}>{showOrders ? "Hide" : "View sessions"}<RefreshCw size={14} /></button></div>
         {showOrders && (orders.length ? <div className={s.orderGrid}>{orders.map(order => <article key={order.id} className={s.orderCard}><div className={s.orderTop}><span>SESSION {order.id.slice(-6).toUpperCase()}</span><span>${(order.amountCents / 100).toFixed(2)}</span></div>
           {!order.generations.length && <p>{order.status === "created" ? "Payment not confirmed yet." : "This order needs a support check."}</p>}
@@ -281,29 +280,19 @@ export function RapLanding({ googleEnabled = false, githubEnabled = false, initi
             {order.status !== "created" && <button className={s.textButton} onClick={() => { setFeedback(order.id); setFeedbackSent(false); setError(""); }}>Report a problem ↗</button>}</div>
         </article>)}</div> : <p className={s.empty}>No sessions yet. Your paid videos and replacement opportunities will appear here.</p>)}
       </section>}
-      <section id="how-it-works" className={s.howSection}><div className={s.sectionTitle}><span className={s.kicker}>02 — NO TALENT REQUIRED</span><h2>FROM CAMERA ROLL<br />TO MIC DROP.</h2></div><div className={s.steps}>
-        {[['01', 'PICK YOUR DUO.', 'Two clear photos. You take the left, your friend takes the right.'], ['02', 'MAKE IT OFFICIAL.', `Sign in, review your photos and pay ${price} once with PayPal.`], ['03', 'DROP IT IN THE CHAT.', 'We generate your moment. Get an email, download the MP4, make their day.']].map(([num, title, copy]) => <div key={num} className={s.step}><span>{num}</span><h3>{title}</h3><p>{copy}</p></div>)}
-      </div></section>
-      <section id="the-track" className={s.trackSection}><div className={s.record} aria-hidden="true"><div><Mic2 size={32} /><span>BOOTH<br />ORIGINALS</span></div></div><div className={s.trackCopy}><span className={s.kicker}>03 — THE SOUND OF YOUR DUO</span><h2>ONE BEAT.<br />ALL THE ENERGY.</h2><p>“Two faces, one beat. Step in, feel the heat.<br />Side by side, we shine. Your crew, your time.”</p>
-        <div className={s.player}><button aria-label={playing ? "Pause soundtrack" : "Play soundtrack"} onClick={() => void toggleAudio()}>{playing ? "Ⅱ" : <Play size={17} fill="currentColor" />}</button><div className={`${s.waveform} ${playing ? s.wavePlaying : ""}`} aria-hidden="true">{Array.from({ length: 38 }, (_, i) => <i key={i} style={{ height: `${12 + ((i * 17 + 11) % 27)}px`, animationDelay: `${i * .025}s` }} />)}</div><span>0:{String(RAP_PRODUCT.duration).padStart(2, "0")}</span></div>
-        <audio ref={audioRef} src={RAP_PRODUCT.musicPath} preload="none" onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} onEnded={() => setPlaying(false)} />
-        <small><Headphones size={13} /> Original demo beat + synthetic reference vocals. Final soundtrack approval pending.</small>
-      </div></section>
-      <section id="faq" className={s.faqSection}><div><span className={s.kicker}>04 — BEFORE YOU HIT RECORD</span><h2>GOOD<br />QUESTIONS.</h2></div><div className={s.faqList}>
-        {[
-          ['Do I need to sing or upload music?', 'No. The fixed BOOTH track comes with the template. Upload two photos; the left person leads and the right person brings the hype.'],
-          ['What exactly am I buying?', `One ${RAP_PRODUCT.duration}-second, vertical 9:16, 720p MP4 for ${price} USD. No subscription, no credit packages. AI faces, motion and lip sync can vary.`],
-          ['How long does it take?', 'Timing depends on the queue and provider. You can leave the page; the job continues and we email you when it is ready. After 30 minutes without a final result, it is flagged for support review rather than automatically resubmitted.'],
-          ['What if the video fails or I do not like it?', 'A confirmed technical failure returns one generation opportunity. You can change the photos and manually try again. For an unsatisfactory completed video, use Report a problem on your order to request an individual review. Refunds and extra replacements are reviewed by support.'],
-          ['What happens to my photos and video?', 'Photos in our system are deleted within 24 hours of task completion. Unpaid drafts expire after 24 hours; unresolved input photos are retained for at most 7 days. Videos are available for 7 days after completion. Provider retention is separate; see our privacy notice.'],
-          ['Are photos and videos checked?', 'Yes. SeeAPI checks uploaded photos before payment and generated videos before delivery. NSFW content is not allowed. Automated checks can make mistakes; contact support if you need help.'],
-          ['Is the picture above a real generated video?', 'No. It is labeled concept artwork showing the intended template. Video generation and checkout stay paused until the soundtrack, quality checks and payment setup are approved.'],
-        ].map(([q, a]) => <details key={q}><summary>{q}<Plus size={17} /></summary><p>{a}</p></details>)}
-      </div></section>
-      <section className={s.lastCall}><span>THE GROUP CHAT IS WAITING.</span><a href="#create">YOUR TURN.<ArrowUpRight /></a></section>
+      <RapHomeGuide checkoutAvailable={checkoutAvailable} trackPlayer={
+        <>
+          <div className={s.player}>
+            <button type="button" aria-label={playing ? "Pause soundtrack" : "Play soundtrack"} onClick={() => void toggleAudio()}>{playing ? "Ⅱ" : <Play size={17} />}</button>
+            <span>Reference track</span>
+          </div>
+          <audio ref={audioRef} src={RAP_PRODUCT.musicPath} preload="none" onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} onEnded={() => setPlaying(false)} />
+          <small className={s.homeTrackNote}><Headphones size={14} aria-hidden="true" /> Demo beat and synthetic reference vocals.</small>
+        </>
+      } />
     </main>
-    <footer className={s.footer}><Link href="/" className={s.brandLink} aria-label="RapVideoMaker home"><BrandLogo size="sm" decorative /></Link><span>Two faces. One beat. A moment that’s yours.</span><div><Link href="/rap/policy#terms">Terms</Link><Link href="/rap/policy#privacy">Privacy</Link><Link href="/rap/policy#refunds">Refunds</Link>{support ? <a href={`mailto:${support}`}>Contact</a> : <Link href="/rap/policy#support">Support</Link>}</div></footer>
-    <dialog ref={authDialog} className={s.dialog} onCancel={() => setAuthOpen(false)} onClose={() => setAuthOpen(false)}><button className={s.close} aria-label="Close sign in" onClick={() => setAuthOpen(false)}><X size={20} /></button><span className={s.kicker}>KEEP YOUR DUO TOGETHER</span><h2>{signup ? "JOIN THE BOOTH." : "WELCOME BACK."}</h2><p>Your photos stay here. Signing in does not charge you or start generation.</p>
+    <footer className={s.footer}><Link href="/" className={s.brandLink} aria-label="RapVideoMaker home"><BrandLogo size="sm" decorative /></Link><div><a href="#pricing">Pricing</a><Link href="/rap/policy#terms">Terms</Link><Link href="/rap/policy#privacy">Privacy</Link><Link href="/rap/policy#refunds">Refunds</Link>{support ? <a href={`mailto:${support}`}>Contact</a> : <Link href="/rap/policy#support">Support</Link>}</div></footer>
+    <dialog ref={authDialog} className={s.dialog} onCancel={() => setAuthOpen(false)} onClose={() => setAuthOpen(false)}><button className={s.close} aria-label="Close sign in" onClick={() => setAuthOpen(false)}><X size={20} /></button><span className={s.kicker}>KEEP YOUR DUO TOGETHER</span><h2>{signup ? "CREATE YOUR ACCOUNT" : "WELCOME BACK."}</h2><p>Your photos stay here. Signing in does not charge you or start generation.</p>
       <form onSubmit={e => void authSubmit(e)}>{signup && <label>Your name<input name="name" required maxLength={100} autoComplete="name" /></label>}<label>Email<input name="email" type="email" required autoComplete="email" /></label><label>Password<input name="password" type="password" required minLength={8} autoComplete={signup ? "new-password" : "current-password"} /></label><button className={s.payButton} disabled={authBusy}>{authBusy ? "Please wait…" : signup ? "Create account" : "Sign in"}<ArrowUpRight size={17} /></button></form>
       {googleEnabled && <button type="button" className={s.google} disabled={authBusy} onClick={() => void socialSignIn("google")}>Continue with Google</button>}
       {githubEnabled && <button type="button" className={s.google} disabled={authBusy} onClick={() => void socialSignIn("github")}>Continue with GitHub</button>}
@@ -317,5 +306,5 @@ export function RapLanding({ googleEnabled = false, githubEnabled = false, initi
 
 function statusLabel(status: string) {
   return ({ queued: "In the queue", preparing: "Preparing your session", submitting: "Submitting your session", submission_unknown: "Submission under review",
-    waiting: "Waiting for the booth", generating: "Recording your moment", persisting: "Saving your video", moderating: "Checking your video", content_rejected: "Content not approved", requires_review: "Support review needed", succeeded: "Your duo is ready", failed: "Generation failed", expired: "Video expired" } as Record<string, string>)[status] || "Checking your session";
+    waiting: "Waiting to start", generating: "Recording your moment", persisting: "Saving your video", moderating: "Checking your video", content_rejected: "Content not approved", requires_review: "Support review needed", succeeded: "Your duo is ready", failed: "Generation failed", expired: "Video expired" } as Record<string, string>)[status] || "Checking your session";
 }

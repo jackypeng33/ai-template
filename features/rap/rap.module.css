@@ -14,3 +14,59 @@
 .header .brandLink img{height:28px}
 .page .brandLink:focus-visible{outline-color:var(--rap-brand-primary)}
 @media(max-width:700px){.header{gap:12px}.header .brandLink img{height:24px}.brandLink{max-width:calc(100vw - 150px)}}
+
+.page .homeWordmark{display:inline-flex;align-items:center;gap:8px;min-height:44px;color:var(--paper);font-size:clamp(16px,4.5vw,24px);letter-spacing:-.06em}
+.homeHero,.homeContents,.homeGuide{width:min(100%,1256px);margin-inline:auto;padding-inline:clamp(18px,4vw,48px)}
+.homeHero{display:grid;gap:28px;padding-block:clamp(26px,5vw,76px) 26px}
+.homeIntro .kicker{margin-bottom:12px}
+.homeIntro h1{margin:0;max-width:15ch;font-family:Impact,"Arial Narrow",sans-serif;font-size:clamp(35px,6.4vw,84px);font-weight:400;line-height:1.01;letter-spacing:.005em;text-wrap:balance}
+.homeIntro p{max-width:41ch;margin:15px 0 0;color:#d2cfc4;font-size:clamp(15px,1.7vw,19px);line-height:1.55}
+.homeHero .creator{min-width:0;padding:clamp(14px,2.5vw,27px)}
+.homeHero .photoGrid{gap:12px}
+.homeHero .photoDrop{aspect-ratio:auto;min-height:104px}
+.homeHero .photoHelp{font-size:12px;margin-block:9px 12px}
+.homeHero .slotLabel{font-size:clamp(8px,1.2vw,10px);white-space:normal}
+.homeHero .homeSampleCta{justify-content:flex-start;min-height:44px;padding-inline:14px;background:var(--orange);border-color:transparent;color:var(--ink);font-size:14px!important;font-weight:700}
+.homeSampleCta svg:last-child{margin-left:auto}
+.homeHero .homeSampleCta:hover{background:#ff956d}
+.homeFacts{display:grid;gap:6px;margin:14px 0 0;padding:0;list-style:none;color:#d2cfc4;font-size:12px;line-height:1.45}
+.homeFacts strong{color:var(--paper)}
+.homeContents{display:flex;flex-wrap:wrap;align-items:baseline;gap:10px 20px;padding-block:15px 25px}
+.homeContents>span{color:var(--orange);font:700 11px "Courier New",monospace;text-transform:uppercase;letter-spacing:.1em}
+.homeContents ul{display:flex;flex-wrap:wrap;gap:6px 14px;margin:0;padding:0;list-style:none}
+.homeContents a{display:inline-block;padding-block:5px;font-size:13px;text-decoration:underline;text-underline-offset:3px}
+.homeChapter{display:grid;gap:18px;padding-block:clamp(30px,5vw,57px);border-top:1px solid #ffffff24;color:#dedbd1;font-size:16px;line-height:1.65}
+.homeChapter header .kicker{margin-bottom:7px}
+.homeChapter h2{font-size:clamp(28px,4.4vw,49px);line-height:1.05;color:var(--paper);text-wrap:balance}
+.homeChapter p{max-width:66ch;margin:0 0 1em}
+.homeChapter :is(p,ol,ul):last-child{margin-bottom:0}
+.homeChapter p a{text-decoration:underline;text-underline-offset:3px}
+.homeSteps,.homePlatformTips{margin:0 0 1em;padding-inline-start:1.4em}
+.homeSteps{list-style:decimal}
+.homePlatformTips{list-style:disc}
+.homeSteps li+li,.homePlatformTips li+li{margin-top:.65em}
+.homeSteps li::marker,.homePlatformTips li::marker{color:var(--orange);font-weight:bold}
+.homeTrack{display:flex;flex-wrap:wrap;gap:18px 26px;align-items:start}
+.homeTrack>div{flex:1 1 220px;min-width:0}
+.homeTrack blockquote{margin:0 0 16px;padding-inline-start:12px;border-inline-start:2px solid var(--orange)}
+.homeTrack .player{margin-bottom:8px;gap:10px}
+.homeTrackNote{display:flex;align-items:center;gap:6px;color:#c2bfb3}
+.homeConcept{position:relative;width:160px;aspect-ratio:3/4;margin:0;overflow:hidden;border:1px solid #ffffff24;border-radius:4px}
+.homeConcept img{object-fit:cover}
+.homeConcept figcaption{position:absolute;inset:auto 0 0;padding:8px;background:#151514;color:var(--paper);font:700 10px/1.35 "Courier New",monospace}
+.homeComparison{width:100%;margin-bottom:1em;border-collapse:collapse;text-align:left;line-height:1.55}
+.homeComparison caption{text-align:left;color:var(--orange);font-size:13px}
+.homeComparison :is(th,td){padding:10px 8px;border-bottom:1px solid #ffffff24;vertical-align:top}
+.homeComparison th:first-child{width:34%}
+.homeChapter .faqList summary{line-height:1.45}
+.homeChapter .faqList p{line-height:1.65;margin-bottom:12px}
+
+@media(min-width:800px){
+  .homeHero{grid-template-columns:1.25fr 1fr;align-items:center;gap:clamp(32px,5vw,70px)}
+  .homeHero .photoDrop{min-height:clamp(128px,14vw,168px)}
+  .homeChapter{grid-template-columns:minmax(200px,1fr) minmax(0,1.65fr);gap:clamp(30px,5vw,70px)}
+}
+@media(max-width:600px){
+  .homeHero{gap:17px}
+  .homeConcept{width:140px}
+}

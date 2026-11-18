@@ -20,19 +20,27 @@ export const rapBrandMetadata: Metadata = {
   },
 };
 
+const homeUrl = "https://rapvideomaker.pro/";
+const homeTitle = "AI Rap Video Generator & AI Rap Video Maker for Two Photos";
+const homeDescription = "RapVideoMaker is an AI rap video generator for two photos. Try sample photos in your browser. No app to install. Video generation is paused.";
+
 export const rapHomeMetadata: Metadata = {
   ...rapBrandMetadata,
-  title: "RapVideoMaker — AI Rap Video Generator",
-  description: "Put you and your friend in the booth. Create a 10-second duo rap video from two photos. One video, one payment.",
-  alternates: { canonical: "/" },
+  metadataBase: new URL(homeUrl),
+  title: homeTitle,
+  description: homeDescription,
+  alternates: { canonical: homeUrl },
   openGraph: {
     ...rapBrandMetadata.openGraph,
-    title: "RapVideoMaker — AI Rap Video Generator",
-    description: "Create a 10-second duo rap video from two photos. One video, one payment.",
-    url: "/",
+    title: homeTitle,
+    description: homeDescription,
+    url: homeUrl,
     locale: "en_US",
     type: "website",
   },
-  // Moving the preview to the home URL does not approve it for search launch.
-  robots: { index: false, follow: false },
+  twitter: {
+    ...rapBrandMetadata.twitter,
+    title: homeTitle,
+    description: homeDescription,
+  },
 };
